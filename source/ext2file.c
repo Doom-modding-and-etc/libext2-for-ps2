@@ -1,6 +1,8 @@
 /**
  * ext2file.c - devoptab file routines for EXT2-based devices.
  *
+ * Copyright (c) 2006 Michael "Chishm" Chisholm
+ * Copyright (c) 2009 Rhys "Shareese" Koedijk
  * Copyright (c) 2010 Dimok
  *
  * This program/include file is free software; you can redistribute it and/or
@@ -124,25 +126,13 @@ int ext2_open_r (struct _reent *r, void *fileStruct, const char *path, int flags
     }
 
     // Make sure we aren't trying to write to a read-only file
-//    if ((file->ni->ni.i_flags & O_RDONLY) && file->write)
-//    {
-//        ext2CloseEntry(file->vd, file->ni);
-//        ext2Unlock(file->vd);
-//        r->_errno = EROFS;
-//        return -1;
-//    }
-
-    // Truncate the file if requested
-//    if ((flags & O_TRUNC) && file->write) {
-//        if (ext2_attr_truncate(file->data_na, 0)) {
-//            ext2_attr_close(file->data_na);
-//            ext2CloseEntry(file->vd, file->ni);
-//            ext2Unlock(file->vd);
-//            r->_errno = errno;
-//            return -1;
-//        }
-//    }
-
+    if (!(file->vd->fs->flags & EXT2_FLAG_RW) && file->write)
+    {
+        ext2CloseEntry(file->vd, file->ni);
+        ext2Unlock(file->vd);
+        r->_errno = EROFS;
+        return -1;
+    }
 
     errcode_t err = ext2fs_file_open2(file->vd->fs, file->ni->ino, &file->ni->ni,
                                       file->write ? EXT2_FLAG_RW : 0, &file->fd);
@@ -152,6 +142,18 @@ int ext2_open_r (struct _reent *r, void *fileStruct, const char *path, int flags
         ext2Unlock(file->vd);
         r->_errno = ENOENT;
         return -1;
+    }
+
+
+    // Truncate the file if requested
+    if ((flags & O_TRUNC) && file->write) {
+        if (ext2fs_file_set_size2(file->fd, 0) != 0) {
+            ext2CloseEntry(file->vd, file->ni);
+            ext2Unlock(file->vd);
+            r->_errno = errno;
+            return -1;
+        }
+        file->ni->ni.i_size = file->ni->ni.i_size_high = 0;
     }
 
     // Set the files current position

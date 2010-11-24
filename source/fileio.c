@@ -121,6 +121,7 @@ errcode_t ext2fs_file_flush(ext2_file_t file)
 	    !(file->flags & EXT2_FILE_BUF_DIRTY))
 		return 0;
 
+    // Flushing out the new size - Dimok
     ext2fs_write_inode(file->fs, file->ino, &file->inode);
 
 	/*
@@ -299,6 +300,7 @@ errcode_t ext2fs_file_write(ext2_file_t file, const void *buf,
 		nbytes -= c;
 	}
 
+    // I don't see why changing size is my duty - Dimok
     if(EXT2_I_SIZE(&file->inode) < file->pos)
     {
         file->inode.i_size = file->pos & 0xFFFFFFFF;

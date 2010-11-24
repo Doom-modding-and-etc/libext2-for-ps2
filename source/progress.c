@@ -68,7 +68,7 @@ void ext2fs_numeric_progress_update(ext2_filsys fs,
 	if (progress->skip_progress)
 		return;
 
-	printf("%*llu/%*llu", progress->log_max, val,
+	fprintf(stdout, "%*llu/%*llu", progress->log_max, val,
 	       progress->log_max, progress->max);
 	fprintf(stdout, "%.*s", (2*progress->log_max)+1, backspaces);
 }

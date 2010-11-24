@@ -1,3 +1,24 @@
+/**
+ * ext2file.c - devoptab file routines for EXT2-based devices.
+ *
+ * Copyright (c) 2006 Michael "Chishm" Chisholm
+ * Copyright (c) 2009 Rhys "Shareese" Koedijk
+ * Copyright (c) 2010 Dimok
+ *
+ * This program/include file is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as published
+ * by the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program/include file is distributed in the hope that it will be
+ * useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include <errno.h>
 #include <string.h>
 #include "ext2.h"
@@ -66,7 +87,7 @@ bool ext2Mount(const char *name, const DISC_INTERFACE *interface, sec_t startSec
 	io_chan->write_error = 0;
 	io_chan->refcount = 1;
     io_chan->private_data = fd;
-	io_chan->flags = EXT2_FLAG_RW | EXT2_FLAG_EXCLUSIVE | EXT2_FLAG_JOURNAL_DEV_OK;
+	io_chan->flags = flags;
 
     retval = ext2fs_open2(io_chan->name, 0, io_chan->flags, 0, 0, &io_chan, &fs);
     if(retval)
