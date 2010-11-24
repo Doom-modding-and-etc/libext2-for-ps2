@@ -1,6 +1,8 @@
 /**
  * ext2_internal.c - Internal support routines for EXT2-based devices.
  *
+ * Copyright (c) 2006 Michael "Chishm" Chisholm
+ * Copyright (c) 2009 Rhys "Shareese" Koedijk
  * Copyright (c) 2010 Dimok
  *
  * This program/include file is free software; you can redistribute it and/or
@@ -35,7 +37,7 @@ static const devoptab_t devops_ext2 =
     ext2_write_r,
     ext2_read_r,
     ext2_seek_r,
-    NULL, //ext2_fstat_r,
+    ext2_fstat_r,
     ext2_stat_r,
     ext2_link_r,
     ext2_unlink_r,
@@ -48,8 +50,8 @@ static const devoptab_t devops_ext2 =
     ext2_dirnext_r,
     ext2_dirclose_r,
     ext2_statvfs_r,
-    NULL, //ext2_ftruncate_r,
-    NULL, //ext2_fsync_r,
+    ext2_ftruncate_r,
+    ext2_fsync_r,
     NULL /* Device data */
 };
 
@@ -199,32 +201,27 @@ void ext2DeinitVolume (ext2_vd *vd)
         nextDir = nextDir->nextOpenDir;
     }
 
- //   // Close any files which are still open (lazy programmers!)
- //   ext2_file_state *nextFile = vd->firstOpenFile;
- //   while (nextFile) {
- //       ext2CloseFile(nextFile);
- //       nextFile = nextFile->nextOpenFile;
- //   }
+    // Close any files which are still open (lazy programmers!)
+    ext2_file_state *nextFile = vd->firstOpenFile;
+    while (nextFile) {
+       ext2CloseFile(nextFile);
+       nextFile = nextFile->nextOpenFile;
+    }
 
     // Reset open directory and file stats
     vd->openDirCount = 0;
     vd->openFileCount = 0;
     vd->firstOpenDir = NULL;
-//    vd->firstOpenFile = NULL;
-
-    //flush filesystem cache
-    ext2fs_flush(vd->fs);
+    vd->firstOpenFile = NULL;
 
     // Force the underlying device to sync
-    vd->io->manager->flush(vd->io);
+    ext2Sync(vd, NULL);
 
     // Unlock
     ext2Unlock(vd);
 
     // Deinitialise the volume lock
     LWP_MutexDestroy(vd->lock);
-
-    return;
 }
 
 static ext2_ino_t ext2PathToInode(ext2_vd *vd, const char * path)
@@ -251,7 +248,7 @@ static ext2_ino_t ext2PathToInode(ext2_vd *vd, const char * path)
 
         filename[i] = '\0';
 
-        errorcode = ext2fs_lookup(vd->fs, parent, filename, i, 0, &ino);
+        errorcode = ext2fs_namei(vd->fs, vd->root, parent, filename, &ino);
         if(errorcode != EXT2_ET_OK)
             return 0;
 
@@ -470,10 +467,13 @@ ext2_inode_t *ext2Create(ext2_vd *vd, const char *path, mode_t type, const char 
     ext2_ino_t newentry = 0;
 
     // Sanity check
-    if (!vd) {
+    if (!vd || !vd->fs) {
         errno = ENODEV;
         return NULL;
     }
+
+    if(!(vd->fs->flags & EXT2_FLAG_RW))
+        return NULL;
 
     // You cannot link between devices
     if(target) {
@@ -610,10 +610,13 @@ int ext2Link(ext2_vd *vd, const char *old_path, const char *new_path)
     errcode_t err = 0;
 
     // Sanity check
-    if (!vd) {
+    if (!vd || !vd->fs) {
         errno = ENODEV;
         return -1;
     }
+
+    if(!(vd->fs->flags & EXT2_FLAG_RW))
+        return -1;
 
     // You cannot link between devices
     if(vd != ext2GetVolume(new_path)) {
@@ -693,7 +696,6 @@ int ext2Link(ext2_vd *vd, const char *old_path, const char *new_path)
 
     // Update entry times
     ext2UpdateTimes(vd, ni, EXT2_UPDATE_MCTIME);
-    ni->dirty = true;
 
     // Sync the entry to disc
     ext2Sync(vd, ni);
@@ -763,10 +765,13 @@ int ext2Unlink (ext2_vd *vd, const char *path)
     errcode_t err = -1;
 
     // Sanity check
-    if (!vd) {
+    if (!vd || !vd->fs) {
         errno = ENODEV;
         return -1;
     }
+
+    if(!(vd->fs->flags & EXT2_FLAG_RW))
+        return -1;
 
     // Get the actual path of the entry
     path = ext2RealPath(path);
@@ -841,6 +846,8 @@ int ext2Unlink (ext2_vd *vd, const char *path)
 
     if(ni->ni.i_links_count <= 0)
     {
+        ni->ni.i_size = 0;
+        ni->ni.i_size_high = 0;
         ni->ni.i_links_count = 0;
         ni->ni.i_dtime = (u32) time(0);
     }
@@ -855,6 +862,13 @@ int ext2Unlink (ext2_vd *vd, const char *path)
     {
         ext2fs_block_iterate(vd->fs, ni->ino, 0, NULL, release_blocks_proc, NULL);
         ext2fs_inode_alloc_stats2(vd->fs, ni->ino, -1, LINUX_S_ISDIR(ni->ni.i_mode));
+    }
+
+    if(ni->ni.i_links_count == 0)
+    {
+        // It's odd that i have to do this on my own and the lib is not doing that for me
+        blk64_t truncate_block = ((vd->fs->blocksize - 1) >> EXT2_BLOCK_SIZE_BITS(vd->fs->super)) + 1;
+        ext2fs_punch(vd->fs, ni->ino, &ni->ni, 0, truncate_block, ~0ULL);
     }
 
     // Sync the entry to disc
@@ -888,10 +902,14 @@ int ext2Sync(ext2_vd *vd, ext2_inode_t *ni)
     errcode_t res = 0;
 
     // Sanity check
-    if (!vd) {
+    if (!vd || !vd->fs) {
         errno = ENODEV;
         return -1;
     }
+
+    if(!(vd->fs->flags & EXT2_FLAG_RW))
+        return -1;
+
     // Lock
     ext2Lock(vd);
 
@@ -902,7 +920,7 @@ int ext2Sync(ext2_vd *vd, ext2_inode_t *ni)
     }
 
     // Sync the entry
-    ext2fs_flush(vd->fs);
+    res = ext2fs_flush(vd->fs);
 
     // Force the underlying device to sync
     vd->io->manager->flush(vd->io);
@@ -979,6 +997,9 @@ void ext2UpdateTimes(ext2_vd *vd, ext2_inode_t *ni, ext2_time_update_flags mask)
 {
     // Sanity check
     if(!ni || !mask)
+        return;
+
+    if(!(vd->fs->flags & EXT2_FLAG_RW))
         return;
 
     u32 now = (u32) time(0);

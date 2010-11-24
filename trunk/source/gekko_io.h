@@ -1,7 +1,8 @@
 /*
 * gekko_io.h - Platform specifics for device io.
 *
-* Copyright (c) 2009 Rhys "Shareese" Koedijk
+ * Copyright (c) 2009 Rhys "Shareese" Koedijk
+ * Copyright (c) 2010 Dimok
 *
 * This program/include file is free software; you can redistribute it and/or
 * modify it under the terms of the GNU General Public License as published

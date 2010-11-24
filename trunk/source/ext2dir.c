@@ -1,6 +1,8 @@
 /**
  * ext2_dir.c - devoptab directory routines for EXT2-based devices.
  *
+ * Copyright (c) 2006 Michael "Chishm" Chisholm
+ * Copyright (c) 2009 Rhys "Shareese" Koedijk
  * Copyright (c) 2010 Dimok
  *
  * This program/include file is free software; you can redistribute it and/or

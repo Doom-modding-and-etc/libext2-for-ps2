@@ -1,6 +1,7 @@
 /**
  * gekko_io.c - Gekko style disk io functions.
  *
+ * Copyright (c) 2009 Rhys "Shareese" Koedijk
  * Copyright (c) 2010 Dimok
  *
  * This program/include file is free software; you can redistribute it and/or
@@ -269,6 +270,9 @@ static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, con
         errno = EBADF;
         return -1;
     }
+
+    if(!(dev->flags & EXT2_FLAG_RW))
+        return -1;
 
     // Get the device interface
     const DISC_INTERFACE* interface = fd->interface;
