@@ -63,8 +63,9 @@ errcode_t ext2fs_create_resize_inode(ext2_filsys fs)
 	errcode_t		retval, retval2;
 	struct ext2_super_block	*sb;
 	struct ext2_inode	inode;
-	__u32			*dindir_buf = 0, *gdt_buf;
+	__u32			*dindir_buf = 0, *gdt_buf = 0;
 	unsigned long long	apb, inode_size;
+	/* FIXME-64 - can't deal with extents */
 	blk_t			dindir_blk, rsv_off, gdt_off, gdt_blk;
 	int			dindir_dirty = 0, inode_dirty = 0;
 

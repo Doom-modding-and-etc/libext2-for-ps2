@@ -13,7 +13,6 @@
 #include <stdio.h>
 
 #include "ext2_fs.h"
-#include "ext2fs.h"
 #include "ext2fsP.h"
 
 /*

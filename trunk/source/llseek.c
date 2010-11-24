@@ -25,8 +25,9 @@
 #ifdef __MSDOS__
 #include <io.h>
 #endif
-#include "com_err.h"
-#include "ext2_io.h"
+
+#include "ext2_fs.h"
+#include "ext2fs.h"
 
 #ifdef __linux__
 

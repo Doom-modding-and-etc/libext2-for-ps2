@@ -144,5 +144,9 @@
 #define EXT2_ET_EXTENT_INVALID_LENGTH          -137
 #define EXT2_ET_IO_CHANNEL_NO_SUPPORT_64          -138
 #define EXT2_NO_MTAB_FILE          -139
+#define EXT2_ET_MAGIC_GENERIC_BITMAP64          -140
+#define EXT2_ET_MAGIC_BLOCK_BITMAP64          -141
+#define EXT2_ET_MAGIC_INODE_BITMAP64          -142
+#define EXT2_ET_CANT_USE_LEGACY_BITMAPS          -143
 
 #endif

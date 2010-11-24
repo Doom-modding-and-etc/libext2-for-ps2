@@ -148,8 +148,8 @@ errout:
  * programs that check for memory leaks happy.)
  */
 #define STRIDE_LENGTH 8
-errcode_t ext2fs_zero_blocks(ext2_filsys fs, blk_t blk, int num,
-			     blk_t *ret_blk, int *ret_count)
+errcode_t ext2fs_zero_blocks2(ext2_filsys fs, blk64_t blk, int num,
+			      blk64_t *ret_blk, int *ret_count)
 {
 	int		j, count;
 	static char	*buf;
@@ -182,7 +182,7 @@ errcode_t ext2fs_zero_blocks(ext2_filsys fs, blk_t blk, int num,
 			if (count > STRIDE_LENGTH)
 				count = STRIDE_LENGTH;
 		}
-		retval = io_channel_write_blk(fs->io, blk, count, buf);
+		retval = io_channel_write_blk64(fs->io, blk, count, buf);
 		if (retval) {
 			if (ret_count)
 				*ret_count = count;
@@ -195,35 +195,47 @@ errcode_t ext2fs_zero_blocks(ext2_filsys fs, blk_t blk, int num,
 	return 0;
 }
 
+errcode_t ext2fs_zero_blocks(ext2_filsys fs, blk_t blk, int num,
+			     blk_t *ret_blk, int *ret_count)
+{
+	blk64_t ret_blk2;
+	errcode_t retval;
+
+	retval = ext2fs_zero_blocks2(fs, blk, num, &ret_blk2, ret_count);
+	if (retval)
+		*ret_blk = (blk_t) ret_blk2;
+	return retval;
+}
+
 /*
  * Helper function for creating the journal using direct I/O routines
  */
 struct mkjournal_struct {
 	int		num_blocks;
 	int		newblocks;
-	blk_t		goal;
-	blk_t		blk_to_zero;
+	blk64_t		goal;
+	blk64_t		blk_to_zero;
 	int		zero_count;
 	char		*buf;
 	errcode_t	err;
 };
 
 static int mkjournal_proc(ext2_filsys	fs,
-			   blk_t	*blocknr,
-			   e2_blkcnt_t	blockcnt,
-			   blk_t	ref_block EXT2FS_ATTR((unused)),
-			   int		ref_offset EXT2FS_ATTR((unused)),
-			   void		*priv_data)
+			  blk64_t	*blocknr,
+			  e2_blkcnt_t	blockcnt,
+			  blk64_t	ref_block EXT2FS_ATTR((unused)),
+			  int		ref_offset EXT2FS_ATTR((unused)),
+			  void		*priv_data)
 {
 	struct mkjournal_struct *es = (struct mkjournal_struct *) priv_data;
-	blk_t	new_blk;
+	blk64_t	new_blk;
 	errcode_t	retval;
 
 	if (*blocknr) {
 		es->goal = *blocknr;
 		return 0;
 	}
-	retval = ext2fs_new_block(fs, es->goal, 0, &new_blk);
+	retval = ext2fs_new_block2(fs, es->goal, 0, &new_blk);
 	if (retval) {
 		es->err = retval;
 		return BLOCK_ABORT;
@@ -234,17 +246,17 @@ static int mkjournal_proc(ext2_filsys	fs,
 	es->newblocks++;
 	retval = 0;
 	if (blockcnt <= 0)
-		retval = io_channel_write_blk(fs->io, new_blk, 1, es->buf);
+		retval = io_channel_write_blk64(fs->io, new_blk, 1, es->buf);
 	else {
 		if (es->zero_count) {
 			if ((es->blk_to_zero + es->zero_count == new_blk) &&
 			    (es->zero_count < 1024))
 				es->zero_count++;
 			else {
-				retval = ext2fs_zero_blocks(fs,
-							    es->blk_to_zero,
-							    es->zero_count,
-							    0, 0);
+				retval = ext2fs_zero_blocks2(fs,
+							     es->blk_to_zero,
+							     es->zero_count,
+							     0, 0);
 				es->zero_count = 0;
 			}
 		}
@@ -262,7 +274,7 @@ static int mkjournal_proc(ext2_filsys	fs,
 		return BLOCK_ABORT;
 	}
 	*blocknr = es->goal = new_blk;
-	ext2fs_block_alloc_stats(fs, new_blk, +1);
+	ext2fs_block_alloc_stats2(fs, new_blk, +1);
 
 	if (es->num_blocks == 0)
 		return (BLOCK_CHANGED | BLOCK_ABORT);
@@ -275,7 +287,7 @@ static int mkjournal_proc(ext2_filsys	fs,
  * This function creates a journal using direct I/O routines.
  */
 static errcode_t write_journal_inode(ext2_filsys fs, ext2_ino_t journal_ino,
-				     blk_t size, int flags)
+				     blk64_t size, int flags)
 {
 	char			*buf;
 	dgrp_t			group, start, end, i, log_flex;
@@ -312,13 +324,13 @@ static errcode_t write_journal_inode(ext2_filsys fs, ext2_ino_t journal_ino,
 	 * the filesystem.  Pick a group that has the largest number
 	 * of free blocks.
 	 */
-	group = ext2fs_group_of_blk(fs, (fs->super->s_blocks_count -
+	group = ext2fs_group_of_blk2(fs, (ext2fs_blocks_count(fs->super) -
 					 fs->super->s_first_data_block) / 2);
 	log_flex = 1 << fs->super->s_log_groups_per_flex;
 	if (fs->super->s_log_groups_per_flex && (group > log_flex)) {
 		group = group & ~(log_flex - 1);
 		while ((group < fs->group_desc_count) &&
-		       fs->group_desc[group].bg_free_blocks_count == 0)
+		       ext2fs_bg_free_blocks_count(fs, group) == 0)
 			group++;
 		if (group == fs->group_desc_count)
 			group = 0;
@@ -328,21 +340,21 @@ static errcode_t write_journal_inode(ext2_filsys fs, ext2_ino_t journal_ino,
 	end = ((group+1) < fs->group_desc_count) ? group+1 : group;
 	group = start;
 	for (i=start+1; i <= end; i++)
-		if (fs->group_desc[i].bg_free_blocks_count >
-		    fs->group_desc[group].bg_free_blocks_count)
+		if (ext2fs_bg_free_blocks_count(fs, i) >
+		    ext2fs_bg_free_blocks_count(fs, group))
 			group = i;
 
 	es.goal = (fs->super->s_blocks_per_group * group) +
 		fs->super->s_first_data_block;
 
-	retval = ext2fs_block_iterate2(fs, journal_ino, BLOCK_FLAG_APPEND,
+	retval = ext2fs_block_iterate3(fs, journal_ino, BLOCK_FLAG_APPEND,
 				       0, mkjournal_proc, &es);
 	if (es.err) {
 		retval = es.err;
 		goto errout;
 	}
 	if (es.zero_count) {
-		retval = ext2fs_zero_blocks(fs, es.blk_to_zero,
+		retval = ext2fs_zero_blocks2(fs, es.blk_to_zero,
 					    es.zero_count, 0, 0);
 		if (retval)
 			goto errout;
@@ -414,7 +426,8 @@ errcode_t ext2fs_add_journal_device(ext2_filsys fs, ext2_filsys journal_dev)
 	start = 1;
 	if (journal_dev->blocksize == 1024)
 		start++;
-	if ((retval = io_channel_read_blk(journal_dev->io, start, -1024, buf)))
+	if ((retval = io_channel_read_blk64(journal_dev->io, start, -1024,
+					    buf)))
 		return retval;
 
 	jsb = (journal_superblock_t *) buf;
@@ -439,7 +452,7 @@ errcode_t ext2fs_add_journal_device(ext2_filsys fs, ext2_filsys journal_dev)
 	}
 
 	/* Writeback the journal superblock */
-	if ((retval = io_channel_write_blk(journal_dev->io, start, -1024, buf)))
+	if ((retval = io_channel_write_blk64(journal_dev->io, start, -1024, buf)))
 		return retval;
 
 	fs->super->s_journal_inum = 0;

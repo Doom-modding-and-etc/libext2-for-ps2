@@ -18,7 +18,7 @@
 
 #include "ext2_fs.h"
 #include "ext2fs.h"
-#include "ext2_ext_attr.h"
+#include <ext2fs/ext2_ext_attr.h>
 
 #ifdef WORDS_BIGENDIAN
 void ext2fs_swap_super(struct ext2_super_block * sb)
@@ -71,6 +71,12 @@ void ext2fs_swap_super(struct ext2_super_block * sb)
 	sb->s_want_extra_isize = ext2fs_swab16(sb->s_want_extra_isize);
 	sb->s_flags = ext2fs_swab32(sb->s_flags);
 	sb->s_kbytes_written = ext2fs_swab64(sb->s_kbytes_written);
+	sb->s_snapshot_inum = ext2fs_swab32(sb->s_snapshot_inum);
+	sb->s_snapshot_id = ext2fs_swab32(sb->s_snapshot_id);
+	sb->s_snapshot_r_blocks_count =
+		ext2fs_swab64(sb->s_snapshot_r_blocks_count);
+	sb->s_snapshot_list = ext2fs_swab32(sb->s_snapshot_list);
+
 	for (i=0; i < 4; i++)
 		sb->s_hash_seed[i] = ext2fs_swab32(sb->s_hash_seed[i]);
 
@@ -88,8 +94,9 @@ void ext2fs_swap_super(struct ext2_super_block * sb)
 		sb->s_jnl_blocks[i] = ext2fs_swab32(sb->s_jnl_blocks[i]);
 }
 
-void ext2fs_swap_group_desc(struct ext2_group_desc *gdp)
+void ext2fs_swap_group_desc2(ext2_filsys fs, struct ext2_group_desc *gdp)
 {
+	/* Do the 32-bit parts first */
 	gdp->bg_block_bitmap = ext2fs_swab32(gdp->bg_block_bitmap);
 	gdp->bg_inode_bitmap = ext2fs_swab32(gdp->bg_inode_bitmap);
 	gdp->bg_inode_table = ext2fs_swab32(gdp->bg_inode_table);
@@ -99,7 +106,30 @@ void ext2fs_swap_group_desc(struct ext2_group_desc *gdp)
 	gdp->bg_flags = ext2fs_swab16(gdp->bg_flags);
 	gdp->bg_itable_unused = ext2fs_swab16(gdp->bg_itable_unused);
 	gdp->bg_checksum = ext2fs_swab16(gdp->bg_checksum);
+	/* If we're 32-bit, we're done */
+	if (fs && (!fs->super->s_desc_size ||
+		   (fs->super->s_desc_size < EXT2_MIN_DESC_SIZE_64BIT)))
+		return;
+
+	/* Swap the 64-bit parts */
+	struct ext4_group_desc *gdp4 = (struct ext4_group_desc *) gdp;
+	gdp4->bg_block_bitmap_hi = ext2fs_swab32(gdp4->bg_block_bitmap_hi);
+	gdp4->bg_inode_bitmap_hi = ext2fs_swab32(gdp4->bg_inode_bitmap_hi);
+	gdp4->bg_inode_table_hi = ext2fs_swab32(gdp4->bg_inode_table_hi);
+	gdp4->bg_free_blocks_count_hi =
+		ext2fs_swab16(gdp4->bg_free_blocks_count_hi);
+	gdp4->bg_free_inodes_count_hi =
+		ext2fs_swab16(gdp4->bg_free_inodes_count_hi);
+	gdp4->bg_used_dirs_count_hi =
+		ext2fs_swab16(gdp4->bg_used_dirs_count_hi);
+	gdp4->bg_itable_unused_hi = ext2fs_swab16(gdp4->bg_itable_unused_hi);
 }
+
+void ext2fs_swap_group_desc(struct ext2_group_desc *gdp)
+{
+	return ext2fs_swap_group_desc2(0, gdp);
+}
+
 
 void ext2fs_swap_ext_attr_header(struct ext2_ext_attr_header *to_header,
 				 struct ext2_ext_attr_header *from_header)

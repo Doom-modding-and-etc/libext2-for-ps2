@@ -11,8 +11,6 @@
 #ifndef _LINUX_FIEMAP_H
 #define _LINUX_FIEMAP_H
 
-#include <linux/types.h>
-
 struct fiemap_extent {
 	__u64 fe_logical;  /* logical offset in bytes for the start of
 			    * the extent from the beginning of the file */
@@ -35,6 +33,10 @@ struct fiemap {
 	__u32 fm_reserved;
 	struct fiemap_extent fm_extents[0]; /* array of mapped extents (out) */
 };
+
+#ifndef FS_IOC_FIEMAP
+#define FS_IOC_FIEMAP	_IOWR('f', 11, struct fiemap)
+#endif
 
 #define FIEMAP_MAX_OFFSET	(~0ULL)
 
