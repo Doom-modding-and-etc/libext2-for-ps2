@@ -12,14 +12,12 @@
 #ifndef _EXT2FS_EXT2_IO_H
 #define _EXT2FS_EXT2_IO_H
 
+#include "ext2fs.h"
+
 /*
  * ext2_loff_t is defined here since unix_io.c needs it.
  */
-#if defined(__GNUC__) || defined(HAS_LONG_LONG)
 typedef long long	ext2_loff_t;
-#else
-typedef long		ext2_loff_t;
-#endif
 
 /* llseek.c */
 ext2_loff_t ext2fs_llseek (int, ext2_loff_t, int);
@@ -88,6 +86,7 @@ struct struct_io_manager {
 
 #define IO_FLAG_RW		0x0001
 #define IO_FLAG_EXCLUSIVE	0x0002
+#define IO_FLAG_DIRECT_IO	0x0004
 
 /*
  * Convenience functions....
@@ -126,6 +125,10 @@ extern void (*test_io_cb_read_blk)
 	(unsigned long block, int count, errcode_t err);
 extern void (*test_io_cb_write_blk)
 	(unsigned long block, int count, errcode_t err);
+extern void (*test_io_cb_read_blk64)
+	(unsigned long long block, int count, errcode_t err);
+extern void (*test_io_cb_write_blk64)
+	(unsigned long long block, int count, errcode_t err);
 extern void (*test_io_cb_set_blksize)
 	(int blksize, errcode_t err);
 

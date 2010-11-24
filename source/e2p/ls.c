@@ -166,6 +166,26 @@ static void print_super_flags(struct ext2_super_block * s, FILE *f)
 		fputs("(none)\n", f);
 }
 
+static __u64 e2p_blocks_count(struct ext2_super_block *super)
+{
+	return super->s_blocks_count |
+		(super->s_feature_incompat & EXT4_FEATURE_INCOMPAT_64BIT ?
+		(__u64) super->s_blocks_count_hi << 32 : 0);
+}
+
+static __u64 e2p_r_blocks_count(struct ext2_super_block *super)
+{
+	return super->s_r_blocks_count |
+		(super->s_feature_incompat & EXT4_FEATURE_INCOMPAT_64BIT ?
+		(__u64) super->s_r_blocks_count_hi << 32 : 0);
+}
+
+static __u64 e2p_free_blocks_count(struct ext2_super_block *super)
+{
+	return super->s_free_blocks_count |
+		(super->s_feature_incompat & EXT4_FEATURE_INCOMPAT_64BIT ?
+		(__u64) super->s_free_blocks_hi << 32 : 0);
+}
 
 #ifndef EXT2_INODE_SIZE
 #define EXT2_INODE_SIZE(s) sizeof(struct ext2_inode)
@@ -211,6 +231,8 @@ void list_super2(struct ext2_super_block * sb, FILE *f)
 	print_features(sb, f);
 	print_super_flags(sb, f);
 	print_mntopts(sb, f);
+	if (sb->s_mount_opts[0])
+		fprintf(f, "Mount options:            %s\n", sb->s_mount_opts);
 	fprintf(f, "Filesystem state:        ");
 	print_fs_state (f, sb->s_state);
 	fprintf(f, "\n");
@@ -221,9 +243,9 @@ void list_super2(struct ext2_super_block * sb, FILE *f)
 	fprintf(f, "Filesystem OS type:       %s\n", str);
 	free(str);
 	fprintf(f, "Inode count:              %u\n", sb->s_inodes_count);
-	fprintf(f, "Block count:              %u\n", sb->s_blocks_count);
-	fprintf(f, "Reserved block count:     %u\n", sb->s_r_blocks_count);
-	fprintf(f, "Free blocks:              %u\n", sb->s_free_blocks_count);
+	fprintf(f, "Block count:              %llu\n", e2p_blocks_count(sb));
+	fprintf(f, "Reserved block count:     %llu\n", e2p_r_blocks_count(sb));
+	fprintf(f, "Free blocks:              %llu\n", e2p_free_blocks_count(sb));
 	fprintf(f, "Free inodes:              %u\n", sb->s_free_inodes_count);
 	fprintf(f, "First block:              %u\n", sb->s_first_data_block);
 	fprintf(f, "Block size:               %u\n", EXT2_BLOCK_SIZE(sb));
@@ -329,6 +351,48 @@ void list_super2(struct ext2_super_block * sb, FILE *f)
 		default:
 			fprintf(f, "type %u\n", sb->s_jnl_backup_type);
 		}
+	}
+	if (sb->s_snapshot_inum) {
+		fprintf(f, "Snapshot inode:           %u\n",
+			sb->s_snapshot_inum);
+		fprintf(f, "Snapshot ID:              %u\n",
+			sb->s_snapshot_id);
+		fprintf(f, "Snapshot reserved blocks: %llu\n",
+			sb->s_snapshot_r_blocks_count);
+	}
+	if (sb->s_snapshot_list)
+		fprintf(f, "Snapshot list head:       %u\n",
+			sb->s_snapshot_list);
+	if (sb->s_error_count)
+		fprintf(f, "FS Error count:           %u\n",
+			sb->s_error_count);
+	if (sb->s_first_error_time) {
+		tm = sb->s_first_error_time;
+		fprintf(f, "First error time:         %s", ctime(&tm));
+		memset(buf, 0, sizeof(buf));
+		strncpy(buf, (char *)sb->s_first_error_func,
+			sizeof(sb->s_first_error_func));
+		fprintf(f, "First error function:     %s\n", buf);
+		fprintf(f, "First error line #:       %u\n",
+			sb->s_first_error_line);
+		fprintf(f, "First error inode #:      %u\n",
+			sb->s_first_error_ino);
+		fprintf(f, "First error block #:      %llu\n",
+			sb->s_first_error_block);
+	}
+	if (sb->s_last_error_time) {
+		tm = sb->s_last_error_time;
+		fprintf(f, "Last error time:          %s", ctime(&tm));
+		memset(buf, 0, sizeof(buf));
+		strncpy(buf, (char *) sb->s_last_error_func,
+			sizeof(sb->s_last_error_func));
+		fprintf(f, "Last error function:      %s\n", buf);
+		fprintf(f, "Last error line #:        %u\n",
+			sb->s_last_error_line);
+		fprintf(f, "Last error inode #:       %u\n",
+			sb->s_last_error_ino);
+		fprintf(f, "Last error block #:       %llu\n",
+			sb->s_last_error_block);
 	}
 }
 

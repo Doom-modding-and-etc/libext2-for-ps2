@@ -368,7 +368,7 @@ int ext2_ftruncate_r (struct _reent *r, int fd, off_t len)
         return -1;
     }
 
-    err = ext2fs_file_set_lsize(file->fd, len);
+    err = ext2fs_file_set_size2(file->fd, len);
 
     // Sync the file (and its attributes) to disc
     if(!err)

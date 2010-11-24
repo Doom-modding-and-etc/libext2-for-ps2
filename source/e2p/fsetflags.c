@@ -95,7 +95,6 @@ int fsetflags (const char * name, unsigned long flags)
 	return r;
 #endif /* HAVE_EXT2_IOCTLS */
 #endif
-notsupp:
 	errno = EOPNOTSUPP;
 	return -1;
 }

@@ -8,7 +8,7 @@
 #if HAVE_SYS_TYPES_H
 #include <sys/types.h>
 #endif
-#include "ext2_types.h"
+#include <ext2fs/ext2_types.h>
 
 #include "crc16.h"
 

@@ -31,6 +31,10 @@ static struct mntopt mntopt_list[] = {
 	{ EXT3_DEFM_JMODE_DATA, "journal_data" },
 	{ EXT3_DEFM_JMODE_ORDERED, "journal_data_ordered" },
 	{ EXT3_DEFM_JMODE_WBACK, "journal_data_writeback" },
+	{ EXT4_DEFM_NOBARRIER,	"nobarrier" },
+	{ EXT4_DEFM_BLOCK_VALIDITY, "block_validity" },
+	{ EXT4_DEFM_DISCARD,	"discard"},
+	{ EXT4_DEFM_NODELALLOC,	"nodelalloc"},
 	{ 0, 0 },
 };
 
@@ -77,14 +81,14 @@ int e2p_string2mntopt(char *string, unsigned int *mask)
 
 static char *skip_over_blanks(char *cp)
 {
-	while (*cp && isspace((int)*cp))
+	while (*cp && isspace((int) *cp))
 		cp++;
 	return cp;
 }
 
 static char *skip_over_word(char *cp)
 {
-	while (*cp && !isspace((int)*cp) && *cp != ',')
+	while (*cp && !isspace((int) *cp) && *cp != ',')
 		cp++;
 	return cp;
 }

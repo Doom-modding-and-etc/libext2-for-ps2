@@ -53,6 +53,7 @@ struct ext2_extent_handle {
 	ext2_filsys		fs;
 	ext2_ino_t 		ino;
 	struct ext2_inode	*inode;
+	struct ext2_inode	inodebuf;
 	int			type;
 	int			level;
 	int			max_depth;
@@ -165,8 +166,6 @@ extern void ext2fs_extent_free(ext2_extent_handle_t handle)
 	if (!handle)
 		return;
 
-	if (handle->inode)
-		ext2fs_free_mem(&handle->inode);
 	if (handle->path) {
 		for (i=1; i <= handle->max_depth; i++) {
 			if (handle->path[i].buf)
@@ -203,17 +202,13 @@ extern errcode_t ext2fs_extent_open2(ext2_filsys fs, ext2_ino_t ino,
 		return retval;
 	memset(handle, 0, sizeof(struct ext2_extent_handle));
 
-	retval = ext2fs_get_mem(sizeof(struct ext2_inode), &handle->inode);
-	if (retval)
-		goto errout;
-
 	handle->ino = ino;
 	handle->fs = fs;
 
 	if (inode) {
-		memcpy(handle->inode, inode, sizeof(struct ext2_inode));
-	}
-	else {
+		handle->inode = inode;
+	} else {
+		handle->inode = &handle->inodebuf;
 		retval = ext2fs_read_inode(fs, ino, handle->inode);
 		if (retval)
 			goto errout;
@@ -285,7 +280,7 @@ errcode_t ext2fs_extent_get(ext2_extent_handle_t handle,
 	struct ext3_extent_idx		*ix = 0;
 	struct ext3_extent		*ex;
 	errcode_t			retval;
-	blk_t				blk;
+	blk64_t				blk;
 	blk64_t				end_blk;
 	int				orig_op, op;
 
@@ -443,7 +438,7 @@ retry:
 		    (handle->fs->io != handle->fs->image_io))
 			memset(newpath->buf, 0, handle->fs->blocksize);
 		else {
-			retval = io_channel_read_blk(handle->fs->io,
+			retval = io_channel_read_blk64(handle->fs->io,
 						     blk, 1, newpath->buf);
 			if (retval)
 				return retval;
@@ -553,7 +548,7 @@ static errcode_t update_path(ext2_extent_handle_t handle)
 		blk = ext2fs_le32_to_cpu(ix->ei_leaf) +
 			((__u64) ext2fs_le16_to_cpu(ix->ei_leaf_hi) << 32);
 
-		retval = io_channel_write_blk(handle->fs->io,
+		retval = io_channel_write_blk64(handle->fs->io,
 				      blk, 1, handle->path[handle->level].buf);
 	}
 	return retval;
@@ -819,7 +814,7 @@ errcode_t ext2fs_extent_replace(ext2_extent_handle_t handle,
 static errcode_t extent_node_split(ext2_extent_handle_t handle)
 {
 	errcode_t			retval = 0;
-	blk_t				new_node_pblk;
+	blk64_t				new_node_pblk;
 	blk64_t				new_node_start;
 	blk64_t				orig_lblk;
 	blk64_t				goal_blk = 0;
@@ -934,7 +929,7 @@ static errcode_t extent_node_split(ext2_extent_handle_t handle)
 		goal_blk = (group * handle->fs->super->s_blocks_per_group) +
 			handle->fs->super->s_first_data_block;
 	}
-	retval = ext2fs_alloc_block(handle->fs, (blk_t) goal_blk, block_buf,
+	retval = ext2fs_alloc_block2(handle->fs, goal_blk, block_buf,
 				    &new_node_pblk);
 	if (retval)
 		goto done;
@@ -962,7 +957,8 @@ static errcode_t extent_node_split(ext2_extent_handle_t handle)
 	new_node_start = ext2fs_le32_to_cpu(EXT_FIRST_INDEX(neweh)->ei_block);
 
 	/* ...and write the new node block out to disk. */
-	retval = io_channel_write_blk(handle->fs->io, new_node_pblk, 1, block_buf);
+	retval = io_channel_write_blk64(handle->fs->io, new_node_pblk, 1,
+					block_buf);
 
 	if (retval)
 		goto done;
@@ -1506,7 +1502,8 @@ errcode_t ext2fs_extent_delete(ext2_extent_handle_t handle, int flags)
 			handle->inode->i_blocks -= handle->fs->blocksize / 512;
 			retval = ext2fs_write_inode(handle->fs, handle->ino,
 						    handle->inode);
-			ext2fs_block_alloc_stats(handle->fs, extent.e_pblk, -1);
+			ext2fs_block_alloc_stats2(handle->fs,
+						  extent.e_pblk, -1);
 		}
 	} else {
 		eh = (struct ext3_extent_header *) path->buf;
@@ -1979,8 +1976,8 @@ void do_goto_block(int argc, char **argv)
 	struct ext2fs_extent	extent;
 	errcode_t		retval;
 	int			op = EXT2_EXTENT_NEXT_LEAF;
-	blk_t			blk;
-	int			level = 0;
+	blk64_t			blk;
+	int			level = 0, err;
 
 	if (common_extent_args_process(argc, argv, 2, 3, "goto_block",
 				       "block [level]", 0))
@@ -1989,16 +1986,18 @@ void do_goto_block(int argc, char **argv)
 	if (strtoblk(argv[0], argv[1], &blk))
 		return;
 
-	if (argc == 3)
-		if (strtoblk(argv[0], argv[2], &level))
+	if (argc == 3) {
+		level = parse_ulong(argv[2], argv[0], "level", &err);
+		if (err)
 			return;
+	}
 
 	retval = extent_goto(current_handle, level, (blk64_t) blk);
 
 	if (retval) {
 		com_err(argv[0], retval,
-			"while trying to go to block %u, level %d",
-			blk, level);
+			"while trying to go to block %llu, level %d",
+			(unsigned long long) blk, level);
 		return;
 	}
 
