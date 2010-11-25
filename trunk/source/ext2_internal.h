@@ -1,3 +1,23 @@
+/**
+ * ext2_internal.h
+ *
+ * Copyright (c) 2009 Rhys "Shareese" Koedijk
+ * Copyright (c) 2010 Dimok
+ *
+ * This program/include file is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as published
+ * by the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program/include file is distributed in the hope that it will be
+ * useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #ifndef EXT2_INTERNAL_H_
 #define EXT2_INTERNAL_H_
 
@@ -8,7 +28,11 @@
 #include "ext2_fs.h"
 #include "mem_allocate.h"
 
+#ifdef DEBUG
+#define ext2_log_trace  printf
+#else
 #define ext2_log_trace(...)
+#endif
 
 typedef struct _ext2_inode_t
 {
@@ -22,15 +46,9 @@ typedef struct _ext2_inode_t
  */
 typedef struct _ext2_vd
 {
-	io_channel io;                          /* NTFS device handle */
-    ext2_filsys fs;                         /* NTFS volume handle */
+	io_channel io;                          /* EXT device handle */
+    ext2_filsys fs;                         /* EXT volume handle */
     mutex_t lock;                           /* Volume lock mutex */
-//    u16 uid;                                /* User id for entry creation */
-//    u16 gid;                                /* Group id for entry creation */
-//    u16 fmask;                              /* Unix style permission mask for file creation */
-//    u16 dmask;                              /* Unix style permission mask for directory creation */
-//    bool showHiddenFiles;                   /* If true, show hidden files when enumerating directories */
-//    bool showSystemFiles;                   /* If true, show system files when enumerating directories */
     ext2_inode_t *cwd_ni;                   /* Current directory */
     struct _ext2_dir_state *firstOpenDir;   /* The start of a FILO linked list of currently opened directories */
     struct _ext2_file_state *firstOpenFile; /* The start of a FILO linked list of currently opened files */

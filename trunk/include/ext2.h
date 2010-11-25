@@ -1,7 +1,6 @@
  /**
- * ext2file.c - devoptab file routines for EXT2/3/4-based devices.
+ * ext2.h - devoptab file routines for EXT2/3/4-based devices.
  *
- * Copyright (c) 2009 Rhys "Shareese" Koedijk
  * Copyright (c) 2010 Dimok
  *
  * This program/include file is free software; you can redistribute it and/or

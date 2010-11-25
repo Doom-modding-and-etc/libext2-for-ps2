@@ -240,11 +240,7 @@ struct struct_ext2_filsys {
 	void (*block_alloc_stats)(ext2_filsys fs, blk64_t blk, int inuse);
 };
 
-#if EXT2_FLAT_INCLUDES
-#include "e2_bitops.h"
-#else
-#include <ext2fs/bitops.h>
-#endif
+#include "bitops.h"
 
 /*
  * Return flags for the block iterator functions

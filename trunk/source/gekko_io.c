@@ -2,7 +2,6 @@
  * gekko_io.c - Gekko style disk io functions.
  *
  * Copyright (c) 2009 Rhys "Shareese" Koedijk
- * Copyright (c) 2009 Rodries
  * Copyright (c) 2010 Dimok
  *
  * This program/include file is free software; you can redistribute it and/or
@@ -32,14 +31,11 @@
 #include <limits.h>
 #include <locale.h>
 
-static inline void noprintf(const char * format, ...) { };
-
-#define ext_debug_print noprintf
-
 #include "gekko_io.h"
 #include "bitops.h"
 #include "ext2_fs.h"
 #include "ext2fs.h"
+#include "ext2_internal.h"
 #include "disc_cache.h"
 #include "mem_allocate.h"
 
@@ -72,12 +68,12 @@ static errcode_t device_gekko_io_open(const char *name, int flags, io_channel *d
 
     // Start the device interface and ensure that it is inserted
     if (!interface->startup()) {
-        ext_debug_print("device failed to start\n");
+        ext2_log_trace("device failed to start\n");
         errno = EIO;
         return -1;
     }
     if (!interface->isInserted()) {
-        ext_debug_print("device media is not inserted\n");
+        ext2_log_trace("device media is not inserted\n");
         errno = EIO;
         return -1;
     }
@@ -85,15 +81,15 @@ static errcode_t device_gekko_io_open(const char *name, int flags, io_channel *d
     struct ext2_super_block	* super = (struct ext2_super_block	*) mem_alloc(SUPERBLOCK_SIZE);	//1024 bytes
     if(!super)
     {
-        ext_debug_print("no memory for superblock");
+        ext2_log_trace("no memory for superblock");
         errno = ENOMEM;
         return -1;
     }
 
-    // Check that there is a valid NTFS boot sector at the start of the device
+    // Check that there is a valid EXT boot sector at the start of the device
     if (!interface->readSectors(fd->startSector+SUPERBLOCK_OFFSET/BYTES_PER_SECTOR, SUPERBLOCK_SIZE/BYTES_PER_SECTOR, super))
     {
-        ext_debug_print("read failure @ sector %d\n", fd->startSector);
+        ext2_log_trace("read failure @ sector %d\n", fd->startSector);
         errno = EROFS;
         mem_free(super);
         return -1;
@@ -148,27 +144,8 @@ static errcode_t device_gekko_io_close(io_channel dev)
         return -1;
     }
 
-    // Check that the device is actually open
-//    if (!NDevOpen(dev)) {
-//        ntfs_log_perror("device is not open\n");
-//        errno = EIO;
-//        return -1;
-//    }
-//
-//    // Mark the device as closed
-//    NDevClearOpen(dev);
-//    NDevClearBlock(dev);
-//
-//    // Flush the device (if dirty and not read-only)
-//    if (NDevDirty(dev) && !NDevReadOnly(dev)) {
-//        ntfs_log_debug("device is dirty, will now sync\n");
-//
-//        // ...?
-//
-//        // Mark the device as clean
-//        NDevClearDirty(dev);
-//
-//    }
+    if(!(dev->flags & EXT2_FLAG_RW))
+        return 0;
 
     // Flush and destroy the cache (if required)
     if (fd->cache) {
@@ -184,7 +161,7 @@ static errcode_t device_gekko_io_close(io_channel dev)
  */
 static s64 device_gekko_io_readbytes(io_channel dev, s64 offset, s64 count, void *buf)
 {
-    ext_debug_print("dev %p, offset %lli, count %lli\n", dev, offset, count);
+    ext2_log_trace("dev %p, offset %lli, count %lli\n", dev, offset, count);
 
     // Get the device driver descriptor
     gekko_fd *fd = DEV_FD(dev);
@@ -227,9 +204,9 @@ static s64 device_gekko_io_readbytes(io_channel dev, s64 offset, s64 count, void
     if((buffer_offset == 0) && (count % fd->sectorSize == 0)) {
 
         // Read from the device
-        ext_debug_print("direct read from sector %d (%d sector(s) long)\n", sec_start, sec_count);
+        ext2_log_trace("direct read from sector %d (%d sector(s) long)\n", sec_start, sec_count);
         if (!device_gekko_io_readsectors(dev, sec_start, sec_count, buf)) {
-            ext_debug_print("direct read failure @ sector %d (%d sector(s) long)\n", sec_start, sec_count);
+            ext2_log_trace("direct read failure @ sector %d (%d sector(s) long)\n", sec_start, sec_count);
             errno = EIO;
             return -1;
         }
@@ -247,10 +224,10 @@ static s64 device_gekko_io_readbytes(io_channel dev, s64 offset, s64 count, void
         }
 
         // Read from the device
-        ext_debug_print("buffered read from sector %d (%d sector(s) long)\n", sec_start, sec_count);
-        ext_debug_print("count: %d  sec_count:%d  fd->sectorSize: %d )\n", (u32)count, (u32)sec_count,(u32)fd->sectorSize);
+        ext2_log_trace("buffered read from sector %d (%d sector(s) long)\n", sec_start, sec_count);
+        ext2_log_trace("count: %d  sec_count:%d  fd->sectorSize: %d )\n", (u32)count, (u32)sec_count,(u32)fd->sectorSize);
         if (!device_gekko_io_readsectors(dev, sec_start, sec_count, buffer)) {
-            ext_debug_print("buffered read failure @ sector %d (%d sector(s) long)\n", sec_start, sec_count);
+            ext2_log_trace("buffered read failure @ sector %d (%d sector(s) long)\n", sec_start, sec_count);
             mem_free(buffer);
             errno = EIO;
             return -1;
@@ -270,7 +247,7 @@ static s64 device_gekko_io_readbytes(io_channel dev, s64 offset, s64 count, void
  */
 static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, const void *buf)
 {
-    ext_debug_print("dev %p, offset %lli, count %lli\n", dev, offset, count);
+    ext2_log_trace("dev %p, offset %lli, count %lli\n", dev, offset, count);
 
     // Get the device driver descriptor
     gekko_fd *fd = DEV_FD(dev);
@@ -314,9 +291,9 @@ static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, con
     if((buffer_offset == 0) && (count % fd->sectorSize == 0))
     {
         // Write to the device
-        ext_debug_print("direct write to sector %d (%d sector(s) long)\n", sec_start, sec_count);
+        ext2_log_trace("direct write to sector %d (%d sector(s) long)\n", sec_start, sec_count);
         if (!device_gekko_io_writesectors(dev, sec_start, sec_count, buf)) {
-            ext_debug_print("direct write failure @ sector %d (%d sector(s) long)\n", sec_start, sec_count);
+            ext2_log_trace("direct write failure @ sector %d (%d sector(s) long)\n", sec_start, sec_count);
             errno = EIO;
             return -1;
         }
@@ -336,7 +313,7 @@ static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, con
         if(buffer_offset != 0)
         {
             if (!device_gekko_io_readsectors(dev, sec_start, 1, buffer)) {
-                ext_debug_print("read failure @ sector %d\n", sec_start);
+                ext2_log_trace("read failure @ sector %d\n", sec_start);
                 mem_free(buffer);
                 errno = EIO;
                 return -1;
@@ -345,7 +322,7 @@ static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, con
         if((buffer_offset+count) % fd->sectorSize != 0)
         {
             if (!device_gekko_io_readsectors(dev, sec_start + sec_count - 1, 1, buffer + ((sec_count-1) * fd->sectorSize))) {
-                ext_debug_print("read failure @ sector %d\n", sec_start + sec_count - 1);
+                ext2_log_trace("read failure @ sector %d\n", sec_start + sec_count - 1);
                 mem_free(buffer);
                 errno = EIO;
                 return -1;
@@ -356,9 +333,9 @@ static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, con
         memcpy(buffer + buffer_offset, buf, count);
 
         // Write to the device
-        ext_debug_print("buffered write to sector %d (%d sector(s) long)\n", sec_start, sec_count);
+        ext2_log_trace("buffered write to sector %d (%d sector(s) long)\n", sec_start, sec_count);
         if (!device_gekko_io_writesectors(dev, sec_start, sec_count, buffer)) {
-            ext_debug_print("buffered write failure @ sector %d\n", sec_start);
+            ext2_log_trace("buffered write failure @ sector %d\n", sec_start);
             mem_free(buffer);
             errno = EIO;
             return -1;
@@ -367,9 +344,6 @@ static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, con
         // Free the buffer
         mem_free(buffer);
     }
-
-    // Mark the device as dirty (if we actually wrote anything)
-    //NDevSetDirty(dev);
 
     return count;
 }
@@ -466,13 +440,11 @@ static bool device_gekko_io_writesectors(io_channel dev, sec_t sector, sec_t num
 static errcode_t device_gekko_io_sync(io_channel dev)
 {
 	gekko_fd *fd = DEV_FD(dev);
-    ext_debug_print("dev %p\n", dev);
+    ext2_log_trace("dev %p\n", dev);
 
     // Check that the device can be written to
-    return -1;
-
-    // Mark the device as clean
-    //NDevClearDirty(dev);
+    if(!(dev->flags & EXT2_FLAG_RW))
+        return -1;
 
     // Flush any sectors in the disc cache (if required)
     if (fd->cache) {
