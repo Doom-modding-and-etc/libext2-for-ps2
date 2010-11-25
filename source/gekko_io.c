@@ -2,6 +2,7 @@
  * gekko_io.c - Gekko style disk io functions.
  *
  * Copyright (c) 2009 Rhys "Shareese" Koedijk
+ * Copyright (c) 2009 Rodries
  * Copyright (c) 2010 Dimok
  *
  * This program/include file is free software; you can redistribute it and/or
@@ -95,6 +96,13 @@ static errcode_t device_gekko_io_open(const char *name, int flags, io_channel *d
         ext_debug_print("read failure @ sector %d\n", fd->startSector);
         errno = EROFS;
         mem_free(super);
+        return -1;
+    }
+
+    if(ext2fs_le16_to_cpu(super->s_magic) != EXT2_SUPER_MAGIC)
+    {
+        mem_free(super);
+        errno = EROFS;
         return -1;
     }
 

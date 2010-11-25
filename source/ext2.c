@@ -21,12 +21,12 @@
  */
 #include <errno.h>
 #include <string.h>
-#include "ext2.h"
 #include "ext2_fs.h"
 #include "ext2fs.h"
 #include "ext2_internal.h"
 #include "gekko_io.h"
 #include "mem_allocate.h"
+#include "partitions.h"
 
 bool ext2Mount(const char *name, const DISC_INTERFACE *interface, sec_t startSector, u32 cachePageCount, u32 cachePageSize, u32 flags)
 {
@@ -167,3 +167,256 @@ void ext2Unmount(const char *name)
 
     return;
 }
+
+
+const char *ext2GetVolumeName (const char *name)
+{
+    if (!name) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    // Get the devices volume descriptor
+    ext2_vd *vd = ext2GetVolume(name);
+    if (!vd) {
+        errno = ENODEV;
+        return NULL;
+    }
+
+    return vd->fs->super->s_volume_name;
+}
+
+bool ext2SetVolumeName (const char *name, const char *volumeName)
+{
+    // Sanity check
+    if (!name || !volumeName) {
+        errno = EINVAL;
+        return false;
+    }
+
+    // Get the devices volume descriptor
+    ext2_vd *vd = ext2GetVolume(name);
+    if (!vd) {
+        errno = ENODEV;
+        return false;
+    }
+
+    // Lock
+    ext2Lock(vd);
+    int i;
+    for(i = 0; i < 15 && *volumeName != 0; ++i, volumeName++)
+        vd->fs->super->s_volume_name[i] = *volumeName;
+
+    vd->fs->super->s_volume_name[i] = '\0';
+
+    ext2fs_mark_super_dirty(vd->fs);
+
+    ext2Sync(vd, NULL);
+
+    // Unlock
+    ext2Unlock(vd);
+
+    return true;
+}
+
+int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
+{
+    MASTER_BOOT_RECORD mbr;
+    PARTITION_RECORD *partition = NULL;
+    int partition_count = 0, ret = -1;
+    sec_t part_lba = 0;
+    sec_t * partitions = NULL;
+    int i;
+
+    union {
+        u8 buffer[512];
+        MASTER_BOOT_RECORD mbr;
+        EXTENDED_BOOT_RECORD ebr;
+    } sector;
+
+    // Sanity check
+    if (!interface) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if(!out_partitions) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    // Start the device and check that it is inserted
+    if (!interface->startup()) {
+        errno = EIO;
+        return -1;
+    }
+    if (!interface->isInserted()) {
+        errno = EIO;
+        return 0;
+    }
+
+    struct ext2_super_block	* super = (struct ext2_super_block	*) malloc(SUPERBLOCK_SIZE);	//1024 bytes
+    if(!super)
+    {
+        ext2_log_trace("no memory for superblock");
+        errno = ENOMEM;
+        return -1;
+    }
+
+    partitions = (sec_t *) malloc(sizeof(sec_t));
+    if(!partitions)
+    {
+        ext2_log_trace("no memory for superblock");
+        errno = ENOMEM;
+        mem_free(super);
+        return -1;
+    }
+    // Read the first sector on the device
+    if (!interface->readSectors(0, 1, &sector.buffer)) {
+        errno = EIO;
+        mem_free(partitions);
+        mem_free(super);
+        return -1;
+    }
+
+    // If this is the devices master boot record
+    if (sector.mbr.signature == MBR_SIGNATURE)
+    {
+        memcpy(&mbr, &sector, sizeof(MASTER_BOOT_RECORD));
+
+        // Search the partition table for all EXT2/3/4 partitions (max. 4 primary partitions)
+        for (i = 0; i < 4; i++)
+        {
+            partition = &mbr.partitions[i];
+            part_lba = ext2fs_le32_to_cpu(mbr.partitions[i].lba_start);
+
+            // Figure out what type of partition this is
+            switch (partition->type)
+            {
+                // Ignore empty partitions
+                case PARTITION_TYPE_EMPTY:
+                    continue;
+
+                // EXT2/3/4 partition
+                case PARTITION_TYPE_LINUX:
+
+                    // Read and validate the EXT partition
+                    if (interface->readSectors(part_lba+1, 2, super))
+                    {
+                        if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
+                        {
+                            partition_count++;
+                            sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
+                            if(!tmp) goto cleanup;
+                            partitions = tmp;
+                        }
+                    }
+
+                    break;
+
+                // DOS 3.3+ or Windows 95 extended partition
+                case PARTITION_TYPE_DOS33_EXTENDED:
+                case PARTITION_TYPE_WIN95_EXTENDED:
+                {
+                    ext2_log_trace("Partition %i: Claims to be Extended\n", i + 1);
+
+                    // Walk the extended partition chain, finding all EXT partitions within it
+                    sec_t ebr_lba = part_lba;
+                    sec_t next_erb_lba = 0;
+                    do {
+                        // Read and validate the extended boot record
+                        if (interface->readSectors(ebr_lba + next_erb_lba, 1, &sector))
+                        {
+                            if (sector.ebr.signature == EBR_SIGNATURE)
+                            {
+                                ext2_log_trace("Logical Partition @ %d: type 0x%x\n", ebr_lba + next_erb_lba,
+                                               sector.ebr.partition.status == PARTITION_STATUS_BOOTABLE ? "bootable (active)" : "non-bootable",
+                                               sector.ebr.partition.type);
+
+                                // Get the start sector of the current partition
+                                // and the next extended boot record in the chain
+                                part_lba = ebr_lba + next_erb_lba + ext2fs_le32_to_cpu(sector.ebr.partition.lba_start);
+                                next_erb_lba = ext2fs_le32_to_cpu(sector.ebr.next_ebr.lba_start);
+
+                                // Check if this partition has a valid EXT boot record
+                                if (interface->readSectors(part_lba+1, 2, super))
+                                {
+                                    if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
+                                    {
+                                        partition_count++;
+                                        sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
+                                        if(!tmp) goto cleanup;
+                                        partitions = tmp;
+                                    }
+                                }
+                            }
+                            else
+                                next_erb_lba = 0;
+                        }
+
+                    } while (next_erb_lba);
+
+                    break;
+
+                }
+
+                // Unknown or unsupported partition type
+                default:
+                {
+                    // Check if this partition has a valid EXT boot record anyway,
+                    // it might be misrepresented due to a lazy partition editor
+                    if (interface->readSectors(part_lba+1, 2, super))
+                    {
+                        if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
+                        {
+                            partition_count++;
+                            sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
+                            if(!tmp) goto cleanup;
+                            partitions = tmp;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+    // Else it is assumed this device has no master boot record
+    }
+    else
+    {
+        ext2_log_trace("No Master Boot Record was found!\n");
+
+        // As a last-ditched effort, search the first 64 sectors of the device for stray EXT partitions
+        for (i = 0; i < 64; i++)
+        {
+            if (interface->readSectors(i, 2, super))
+            {
+                if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
+                {
+                    partition_count++;
+                    sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
+                    if(!tmp) goto cleanup;
+                    partitions = tmp;
+                }
+            }
+        }
+
+    }
+
+    // Return the found partitions (if any)
+    if (partition_count > 0)
+    {
+        *out_partitions = partitions;
+        ret = partition_count;
+    }
+
+cleanup:
+
+    if(partitions)
+        mem_free(partitions);
+    if(super)
+        mem_free(super);
+
+    return ret;
+}
+

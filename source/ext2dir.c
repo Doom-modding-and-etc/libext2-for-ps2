@@ -387,10 +387,17 @@ int ext2_statvfs_r (struct _reent *r, const char *path, struct statvfs *buf)
  */
 static int DirIterateCallback(struct ext2_dir_entry *dirent, int offset, int blocksize, char *buf, void *dirState)
 {
+    // Sanity check
+    if(!dirent)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
     ext2_dir_state* dir = STATE(((DIR_ITER *) dirState));
 
     // Sanity check
-    if (!dir || !dir->vd || !dirent) {
+    if (!dir || !dir->vd) {
         errno = EINVAL;
         return -1;
     }
@@ -404,13 +411,28 @@ static int DirIterateCallback(struct ext2_dir_entry *dirent, int offset, int blo
     // Allocate a new directory entry
     ext2_dir_entry *entry = (ext2_dir_entry *) mem_alloc(sizeof(ext2_dir_entry));
     if (!entry)
+    {
+        errno = ENOMEM;
         return -1;
+    }
 
     memset(entry, 0, sizeof(ext2_dir_entry));
 
-    entry->name = mem_alloc(dirent->name_len+1);
-    if(entry->name)
-        strcpy(entry->name, dirent->name);
+    int stringlen = dirent->name_len & 0xFF;
+
+    entry->name = mem_alloc(stringlen+1);
+    if(!entry->name)
+    {
+        mem_free(entry);
+        errno = ENOMEM;
+        return -1;
+    }
+
+    // The null termination is not necessarily there in the fs, we gotta do it
+    int i;
+    for(i = 0; i < stringlen; ++i)
+        entry->name[i] = dirent->name[i];
+    entry->name[i] = '\0';
 
     // Link the entry to the directory
     if (!dir->first) {
@@ -429,7 +451,19 @@ DIR_ITER *ext2_diropen_r (struct _reent *r, DIR_ITER *dirState, const char *path
 {
     ext2_log_trace("dirState %p, path %s\n", dirState, path);
 
+    if(!dirState)
+    {
+        r->_errno = EINVAL;
+        return NULL;
+    }
+
     ext2_dir_state* dir = STATE(dirState);
+
+    if(!dir)
+    {
+        r->_errno = EINVAL;
+        return NULL;
+    }
 
     // Get the volume descriptor for this path
     dir->vd = ext2GetVolume(path);
@@ -470,7 +504,7 @@ DIR_ITER *ext2_diropen_r (struct _reent *r, DIR_ITER *dirState, const char *path
     dir->current = dir->first;
 
     // Update directory times
-    //ext2UpdateTimes(dir->vd, dir->ni, NTFS_UPDATE_ATIME);
+    ext2UpdateTimes(dir->vd, dir->ni, EXT2_UPDATE_ATIME);
 
     // Insert the directory into the double-linked FILO list of open directories
     if (dir->vd->firstOpenDir) {
@@ -494,6 +528,12 @@ int ext2_dirreset_r (struct _reent *r, DIR_ITER *dirState)
 {
     ext2_log_trace("dirState %p\n", dirState);
 
+    if(!dirState)
+    {
+        r->_errno = EINVAL;
+        return -1;
+    }
+
     ext2_dir_state* dir = STATE(dirState);
 
     // Sanity check
@@ -509,7 +549,7 @@ int ext2_dirreset_r (struct _reent *r, DIR_ITER *dirState)
     dir->current = dir->first;
 
     // Update directory times
-    //ntfsUpdateTimes(dir->vd, dir->ni, NTFS_UPDATE_ATIME);
+    ext2UpdateTimes(dir->vd, dir->ni, EXT2_UPDATE_ATIME);
 
     // Unlock
     ext2Unlock(dir->vd);
@@ -520,6 +560,12 @@ int ext2_dirreset_r (struct _reent *r, DIR_ITER *dirState)
 int ext2_dirnext_r (struct _reent *r, DIR_ITER *dirState, char *filename, struct stat *filestat)
 {
     ext2_log_trace("dirState %p, filename %p, filestat %p\n", dirState, filename, filestat);
+
+    if(!dirState)
+    {
+        r->_errno = EINVAL;
+        return -1;
+    }
 
     ext2_dir_state* dir = STATE(dirState);
     ext2_inode_t *ni = NULL;
@@ -563,7 +609,7 @@ int ext2_dirnext_r (struct _reent *r, DIR_ITER *dirState, char *filename, struct
     dir->current = dir->current->next;
 
     // Update directory times
-    //ntfsUpdateTimes(dir->vd, dir->ni, NTFS_UPDATE_ATIME);
+    ext2UpdateTimes(dir->vd, dir->ni, EXT2_UPDATE_ATIME);
 
     // Unlock
     ext2Unlock(dir->vd);
@@ -574,6 +620,12 @@ int ext2_dirnext_r (struct _reent *r, DIR_ITER *dirState, char *filename, struct
 int ext2_dirclose_r (struct _reent *r, DIR_ITER *dirState)
 {
     ext2_log_trace("dirState %p\n", dirState);
+
+    if(!dirState)
+    {
+        r->_errno = EINVAL;
+        return -1;
+    }
 
     ext2_dir_state* dir = STATE(dirState);
 
