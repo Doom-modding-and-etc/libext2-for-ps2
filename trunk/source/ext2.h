@@ -1,4 +1,4 @@
-/**
+ /**
  * ext2file.c - devoptab file routines for EXT2/3/4-based devices.
  *
  * Copyright (c) 2009 Rhys "Shareese" Koedijk
@@ -42,6 +42,17 @@ extern "C" {
 #define EXT2_FLAG_DEFAULT               (EXT2_FLAG_RW | EXT2_FLAG_64BITS | EXT2_FLAG_JOURNAL_DEV_OK)
 
 /**
+ * Find all EXT2/3/4 partitions on a block device.
+ *
+ * @param INTERFACE The block device to search
+ * @param PARTITIONS (out) A pointer to receive the array of partition start sectors
+ *
+ * @return The number of entries in PARTITIONS or -1 if an error occurred (see errno)
+ * @note The caller is responsible for freeing PARTITIONS when finished with it
+ */
+int ext2FindPartitions(const DISC_INTERFACE *interface, sec_t **partitions);
+
+/**
  * Mount a EXT2/3/4 partition from a specific sector on a block device.
  *
  * @param NAME The name to mount the device under (can then be accessed as "NAME:/")
@@ -61,6 +72,26 @@ bool ext2Mount(const char *name, const DISC_INTERFACE *interface, sec_t startSec
  * @param NAME The name of mount used in ext2Mount()
  */
 void ext2Unmount(const char *name);
+
+/**
+ * Get the volume name of a mounted EXT2/3/4 partition.
+ *
+ * @param NAME The name of mount
+ *
+ * @return The volumes name if successful or NULL if an error occurred (see errno)
+ */
+const char *ext2GetVolumeName (const char *name);
+
+/**
+ * Set the volume name of a mounted EXT2/3/4 partition.
+ *
+ * @param NAME The name of mount
+ * @param VOLUMENAME The new volume name
+ *
+ * @return True if mount was successful, false if an error occurred (see errno)
+ * @note The mount must be write-enabled else this will fail
+ */
+bool ext2SetVolumeName (const char *name, const char *volumeName);
 
 #ifdef __cplusplus
 }

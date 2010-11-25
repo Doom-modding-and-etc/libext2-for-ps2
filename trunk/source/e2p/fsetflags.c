@@ -51,8 +51,8 @@
 
 int fsetflags (const char * name, unsigned long flags)
 {
-	struct stat buf;
 #if HAVE_CHFLAGS && !(APPLE_DARWIN && HAVE_EXT2_IOCTLS)
+    struct stat buf;
 	unsigned long bsd_flags = 0;
 
 #ifdef UF_IMMUTABLE

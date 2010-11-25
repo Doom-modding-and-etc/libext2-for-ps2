@@ -38,8 +38,8 @@
 
 int setflags (int fd, unsigned long flags)
 {
-	struct stat buf;
 #if HAVE_CHFLAGS
+    struct stat buf;
 	unsigned long bsd_flags = 0;
 
 #ifdef UF_IMMUTABLE

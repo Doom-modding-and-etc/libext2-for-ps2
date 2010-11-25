@@ -536,12 +536,12 @@ ext2_inode_t *ext2Create(ext2_vd *vd, const char *path, mode_t type, const char 
     // Directory
     else if(type == S_IFDIR)
     {
-        newentry = ext2CreateMkDir(vd, dir_ni->ino, type, name);
+        newentry = ext2CreateMkDir(vd, dir_ni->ino, LINUX_S_IFDIR | (0777 & ~vd->fs->umask), name);
     }
     // File
     else if(type == S_IFREG)
     {
-        newentry = ext2CreateFile(vd, dir_ni->ino, type, name);
+        newentry = ext2CreateFile(vd, dir_ni->ino, LINUX_S_IFREG | (0777 & ~vd->fs->umask), name);
     }
 
     // If the entry was created
@@ -686,7 +686,7 @@ int ext2Link(ext2_vd *vd, const char *old_path, const char *new_path)
         }
         else if(err != 0)
         {
-            errno = ENOENT;
+            errno = ENOMEM;
             goto cleanup;
         }
     }

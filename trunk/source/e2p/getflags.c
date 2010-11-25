@@ -29,9 +29,8 @@
 
 int getflags (int fd, unsigned long * flags)
 {
-	struct stat buf;
 #if HAVE_STAT_FLAGS
-
+    struct stat buf;
 	if (fstat (fd, &buf) == -1)
 		return -1;
 

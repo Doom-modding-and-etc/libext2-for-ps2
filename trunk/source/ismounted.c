@@ -301,9 +301,7 @@ leave:
 errcode_t ext2fs_check_mount_point(const char *device, int *mount_flags,
 				  char *mtpt, int mtlen)
 {
-	struct stat	st_buf;
 	errcode_t	retval = 0;
-	int		fd;
 
 	if (is_swap_device(device)) {
 		*mount_flags = EXT2_MF_MOUNTED | EXT2_MF_SWAP;
@@ -315,9 +313,6 @@ errcode_t ext2fs_check_mount_point(const char *device, int *mount_flags,
 #ifdef HAVE_GETMNTINFO
 		retval = check_getmntinfo(device, mount_flags, mtpt, mtlen);
 #else
-#ifdef __GNUC__
- #warning "Can't use getmntent or getmntinfo to check for mounted filesystems!"
-#endif
 		*mount_flags = 0;
 #endif /* HAVE_GETMNTINFO */
 #endif /* HAVE_MNTENT_H */
