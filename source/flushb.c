@@ -65,17 +65,9 @@ errcode_t ext2fs_sync_device(int fd, int flushb)
 #ifdef BLKFLSBUF
 		if (ioctl (fd, BLKFLSBUF, 0) == 0)
 			return 0;
-#else
-#ifdef __GNUC__
- #warning BLKFLSBUF not defined
-#endif /* __GNUC__ */
 #endif
 #ifdef FDFLUSH
 		ioctl (fd, FDFLUSH, 0);   /* In case this is a floppy */
-#else
-#ifdef __GNUC__
- #warning FDFLUSH not defined
-#endif /* __GNUC__ */
 #endif
 	}
 	return 0;

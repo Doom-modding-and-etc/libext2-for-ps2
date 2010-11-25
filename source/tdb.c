@@ -392,7 +392,9 @@ int tdb_brlock_upgrade(struct tdb_context *tdb, tdb_off_t offset, size_t len)
 		/* sleep for as short a time as we can - more portable than usleep() */
 		tv.tv_sec = 0;
 		tv.tv_usec = 1;
+#ifdef HAVE_SYS_SELECT_H
 		select(0, NULL, NULL, NULL, &tv);
+#endif
 	}
 	TDB_LOG((tdb, TDB_DEBUG_TRACE,"tdb_brlock_upgrade failed at offset %d\n", offset));
 	return -1;

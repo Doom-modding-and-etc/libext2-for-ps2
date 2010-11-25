@@ -18,7 +18,7 @@
 
 #include "ext2_fs.h"
 #include "ext2fs.h"
-#include <ext2fs/ext2_ext_attr.h>
+#include "ext2_ext_attr.h"
 
 #ifdef WORDS_BIGENDIAN
 void ext2fs_swap_super(struct ext2_super_block * sb)
@@ -187,7 +187,7 @@ void ext2fs_swap_inode_full(ext2_filsys fs, struct ext2_inode_large *t,
 			    struct ext2_inode_large *f, int hostorder,
 			    int bufsize)
 {
-	unsigned i, has_data_blocks, extra_isize, attr_magic;
+	unsigned i, has_data_blocks = 0, extra_isize = 0, attr_magic = 0;
 	int has_extents = 0;
 	int islnk = 0;
 	__u32 *eaf, *eat;
