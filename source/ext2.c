@@ -96,12 +96,6 @@ bool ext2Mount(const char *name, const DISC_INTERFACE *interface, sec_t startSec
 		goto cleanup;
     }
 
-    retval = ext2fs_read_bitmaps(fs);
-    if (retval) {
-        ext2_log_trace("read bitmats error %i\n", (int) retval);
-        goto cleanup;
-    }
-
     vd = mem_alloc(sizeof(ext2_vd));
     if(!vd)
     {
@@ -329,7 +323,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                         {
                             if (sector.ebr.signature == EBR_SIGNATURE)
                             {
-                                ext2_log_trace("Logical Partition @ %d: type 0x%x\n", ebr_lba + next_erb_lba,
+                                ext2_log_trace("Logical Partition @ %d: %s type 0x%x\n", ebr_lba + next_erb_lba,
                                                sector.ebr.partition.status == PARTITION_STATUS_BOOTABLE ? "bootable (active)" : "non-bootable",
                                                sector.ebr.partition.type);
 

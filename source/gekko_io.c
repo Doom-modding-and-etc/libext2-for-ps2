@@ -110,17 +110,17 @@ static errcode_t device_gekko_io_open(const char *name, int flags, io_channel *d
     switch(ext2fs_le32_to_cpu(super->s_log_block_size))
     {
         case 1:
-            fd->sectorCount = ext2fs_le32_to_cpu(super->s_blocks_count) * 2048 / BYTES_PER_SECTOR;
+            fd->sectorCount = (sec_t) ((u64) ext2fs_le32_to_cpu(super->s_blocks_count) * (u64) 2048 / (u64) BYTES_PER_SECTOR);
             break;
         case 2:
-            fd->sectorCount = ext2fs_le32_to_cpu(super->s_blocks_count) * 4096 / BYTES_PER_SECTOR;
+            fd->sectorCount = (sec_t) ((u64) ext2fs_le32_to_cpu(super->s_blocks_count) * (u64) 4096 / (u64) BYTES_PER_SECTOR);
             break;
         case 3:
-            fd->sectorCount = ext2fs_le32_to_cpu(super->s_blocks_count) * 8192 / BYTES_PER_SECTOR;
+            fd->sectorCount = (sec_t) ((u64) ext2fs_le32_to_cpu(super->s_blocks_count) * (u64) 8192 / (u64) BYTES_PER_SECTOR);
             break;
         default:
         case 0:
-            fd->sectorCount = ext2fs_le32_to_cpu(super->s_blocks_count) * 1024 / BYTES_PER_SECTOR;
+            fd->sectorCount = (sec_t) ((u64) ext2fs_le32_to_cpu(super->s_blocks_count) * (u64) 1024 / (u64) BYTES_PER_SECTOR);
             break;
     }
 
@@ -162,7 +162,6 @@ static errcode_t device_gekko_io_close(io_channel dev)
 static s64 device_gekko_io_readbytes(io_channel dev, s64 offset, s64 count, void *buf)
 {
     ext2_log_trace("dev %p, offset %lli, count %lli\n", dev, offset, count);
-
     // Get the device driver descriptor
     gekko_fd *fd = DEV_FD(dev);
     if (!fd) {
@@ -199,18 +198,26 @@ static s64 device_gekko_io_readbytes(io_channel dev, s64 offset, s64 count, void
         sec_count = (sec_t) ceil((f64) (buffer_offset+count) / (f64) fd->sectorSize);
     }
 
+    // Don't read over the partitions limit
+    if(sec_start+sec_count > fd->startSector+fd->sectorCount)
+    {
+        ext2_log_trace("Error: read requested up to sector %lli while partition goes up to %lli\n", (s64) (sec_start+sec_count), (s64) (fd->startSector+fd->sectorCount));
+        errno = EROFS;
+        return -1;
+    }
+
     // If this read happens to be on the sector boundaries then do the read straight into the destination buffer
 
-    if((buffer_offset == 0) && (count % fd->sectorSize == 0)) {
-
+    if((buffer_offset == 0) && (count % fd->sectorSize == 0))
+    {
         // Read from the device
         ext2_log_trace("direct read from sector %d (%d sector(s) long)\n", sec_start, sec_count);
-        if (!device_gekko_io_readsectors(dev, sec_start, sec_count, buf)) {
+        if (!device_gekko_io_readsectors(dev, sec_start, sec_count, buf))
+        {
             ext2_log_trace("direct read failure @ sector %d (%d sector(s) long)\n", sec_start, sec_count);
             errno = EIO;
             return -1;
         }
-
     // Else read into a buffer and copy over only what was requested
     }
     else
@@ -285,6 +292,14 @@ static s64 device_gekko_io_writebytes(io_channel dev, s64 offset, s64 count, con
     }
     if ((buffer_offset+count) > fd->sectorSize) {
         sec_count = (sec_t) ceil((f64) (buffer_offset+count) / (f64) fd->sectorSize);
+    }
+
+    // Don't write over the partitions limit
+    if(sec_start+sec_count > fd->startSector+fd->sectorCount)
+    {
+        ext2_log_trace("Error: write requested up to sector %lli while partition goes up to %lli\n", (s64) (sec_start+sec_count), (s64) (fd->startSector+fd->sectorCount));
+        errno = EROFS;
+        return -1;
     }
 
     // If this write happens to be on the sector boundaries then do the write straight to disc
