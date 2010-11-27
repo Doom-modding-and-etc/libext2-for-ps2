@@ -16,6 +16,10 @@
 #define COM_ERR_ATTR(x)
 #endif
 
+#ifndef DEBUG_GEKKO
+#define OMIT_COM_ERR
+#endif
+
 #include <stddef.h>
 #include <stdarg.h>
 

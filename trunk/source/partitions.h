@@ -7,6 +7,8 @@
 #define MBR_SIGNATURE                       ext2fs_cpu_to_le16(0xAA55)
 #define EBR_SIGNATURE                       ext2fs_cpu_to_le16(0xAA55)
 
+#define PARTITION_STATUS_BOOTABLE           0x80 /* Bootable (active) */
+
 #define PARTITION_TYPE_EMPTY                0x00 /* Empty */
 #define PARTITION_TYPE_DOS33_EXTENDED       0x05 /* DOS 3.3+ extended partition */
 #define PARTITION_TYPE_WIN95_EXTENDED       0x0F /* Windows 95 extended partition */

@@ -28,7 +28,7 @@
 #include "ext2_fs.h"
 #include "mem_allocate.h"
 
-#ifdef DEBUG
+#ifdef DEBUG_GEKKO
 #define ext2_log_trace  printf
 #else
 #define ext2_log_trace(...)

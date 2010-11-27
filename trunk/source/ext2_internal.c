@@ -26,6 +26,7 @@
 #include "ext2_internal.h"
 #include "ext2dir.h"
 #include "ext2file.h"
+#include "gekko_io.h"
 
 // EXT2 device driver devoptab
 static const devoptab_t devops_ext2 =
@@ -333,77 +334,98 @@ void ext2CloseEntry(ext2_vd *vd, ext2_inode_t * ni)
     return;
 }
 
-static ext2_ino_t ext2CreateSymlink(ext2_vd *vd, ext2_ino_t parent, const char *path, const char * targetdir, const char * name)
+static ext2_ino_t ext2CreateSymlink(ext2_vd *vd, const char *path, const char * targetdir, const char * name, mode_t type)
 {
-    return -1;
-    ext2_ino_t target_ino = parent;
     ext2_inode_t *target_ni = NULL;
-    ext2_inode_t *src_ni = NULL;
     ext2_ino_t newentry = 0;
-    ext2_ino_t existing;
+    ext2_ino_t ino = 0;
 
-    if(ext2fs_namei(vd->fs, vd->root, parent, name, &existing) == 0)
+    // Check if it does exist
+    target_ni = ext2OpenEntry(vd, targetdir);
+    if (!target_ni)
         goto cleanup;
 
-    // Open the entries parent directory
-    src_ni = ext2OpenEntry(vd, path);
-    if (!src_ni)
+    int err = ext2fs_new_inode(vd->fs, target_ni->ino, type, 0, &ino);
+    if (err)
         goto cleanup;
-
-    if(strchr(targetdir, '/') != NULL)
-    {
-        target_ni = ext2OpenEntry(vd, targetdir);
-        if (!target_ni)
-            goto cleanup;
-
-        target_ino = target_ni->ino;
-    }
-
-    errcode_t err = -1;
 
     do
     {
-        err = ext2fs_link(vd->fs, target_ino, name, src_ni->ino, EXT2_FT_SYMLINK);
+        err = ext2fs_link(vd->fs, target_ni->ino, name, ino, EXT2_FT_SYMLINK);
         if (err == EXT2_ET_DIR_NO_SPACE)
         {
-            err = ext2fs_expand_dir(vd->fs, target_ino);
+            err = ext2fs_expand_dir(vd->fs, target_ni->ino);
             if (err)
                 goto cleanup;
         }
     }
     while(err == EXT2_ET_DIR_NO_SPACE);
 
-    newentry = src_ni->ino;
+    ext2fs_inode_alloc_stats2(vd->fs, ino, +1, 0);
+
+    struct ext2_inode inode;
+    memset(&inode, 0, sizeof(inode));
+    inode.i_mode = type;
+    inode.i_atime = inode.i_ctime = inode.i_mtime = time(NULL);
+    inode.i_links_count = 1;
+    inode.i_size = strlen(path); //initial size of file
+    inode.i_uid = target_ni->ni.i_uid;
+    inode.i_gid = target_ni->ni.i_gid;
+
+    if (strlen(path) <= sizeof(inode.i_block))
+    {
+        /* fast symlink */
+        strncpy((char *)&(inode.i_block[0]),path,sizeof(inode.i_blocks));
+    }
+    else
+    {
+        /* slow symlink */
+        char * buffer = mem_alloc(vd->fs->blocksize);
+        if (buffer)
+        {
+            blk_t blk;
+            strncpy(buffer, path, vd->fs->blocksize);
+            err = ext2fs_new_block(vd->fs, 0, 0, &blk);
+            if (!err)
+            {
+                inode.i_block[0] = blk;
+                inode.i_blocks = vd->fs->blocksize / BYTES_PER_SECTOR;
+                vd->fs->io->manager->write_blk(vd->fs->io, blk, 1, buffer);
+                ext2fs_block_alloc_stats(vd->fs, blk, +1);
+            }
+            mem_free(buffer);
+        }
+    }
+
+    if(ext2fs_write_new_inode(vd->fs, ino, &inode) != 0)
+        newentry = ino;
 
 cleanup:
 
     if(target_ni)
         ext2CloseEntry(vd, target_ni);
 
-    if(src_ni)
-        ext2CloseEntry(vd, src_ni);
-
     return newentry;
 }
 
-static ext2_ino_t ext2CreateMkDir(ext2_vd *vd, ext2_ino_t parent, int type, const char * name)
+static ext2_ino_t ext2CreateMkDir(ext2_vd *vd, ext2_inode_t * parent, int type, const char * name)
 {
     ext2_ino_t newentry = 0;
     ext2_ino_t existing;
 
-    if(ext2fs_namei(vd->fs, vd->root, parent, name, &existing) == 0)
+    if(ext2fs_namei(vd->fs, vd->root, parent->ino, name, &existing) == 0)
         return 0;
 
-    errcode_t err = ext2fs_new_inode(vd->fs, parent, type, 0, &newentry);
+    errcode_t err = ext2fs_new_inode(vd->fs, parent->ino, type, 0, &newentry);
     if(err != EXT2_ET_OK)
         return 0;
 
     do
     {
-        err = ext2fs_mkdir(vd->fs, parent, newentry, name);
+        err = ext2fs_mkdir(vd->fs, parent->ino, newentry, name);
         if(err == EXT2_ET_DIR_NO_SPACE)
         {
-            if(ext2fs_expand_dir(vd->fs, parent) != 0)
+            if(ext2fs_expand_dir(vd->fs, parent->ino) != 0)
                 return 0;
         }
     }
@@ -412,29 +434,38 @@ static ext2_ino_t ext2CreateMkDir(ext2_vd *vd, ext2_ino_t parent, int type, cons
     if(err != EXT2_ET_OK)
         return 0;
 
+    struct ext2_inode inode;
+    if(ext2fs_read_inode(vd->fs, newentry, &inode) == EXT2_ET_OK)
+    {
+        inode.i_mode = type;
+        inode.i_uid = parent->ni.i_uid;
+        inode.i_gid = parent->ni.i_gid;
+        ext2fs_write_new_inode(vd->fs, newentry, &inode);
+    }
+
     return newentry;
 }
 
 
-static ext2_ino_t ext2CreateFile(ext2_vd *vd, ext2_ino_t parent, int type, const char * name)
+static ext2_ino_t ext2CreateFile(ext2_vd *vd, ext2_inode_t * parent, int type, const char * name)
 {
     errcode_t retval = -1;
     ext2_ino_t newfile = 0;
     ext2_ino_t existing;
 
-    if(ext2fs_namei(vd->fs, vd->root, parent, name, &existing) == 0)
+    if(ext2fs_namei(vd->fs, vd->root, parent->ino, name, &existing) == 0)
         return 0;
 
-	retval = ext2fs_new_inode(vd->fs, parent, type, 0, &newfile);
+	retval = ext2fs_new_inode(vd->fs, parent->ino, type, 0, &newfile);
 	if (retval)
         return 0;
 
     do
     {
-        retval = ext2fs_link(vd->fs, parent, name, newfile, EXT2_FT_REG_FILE);
+        retval = ext2fs_link(vd->fs, parent->ino, name, newfile, EXT2_FT_REG_FILE);
         if (retval == EXT2_ET_DIR_NO_SPACE)
         {
-            if (ext2fs_expand_dir(vd->fs, parent) != 0)
+            if (ext2fs_expand_dir(vd->fs, parent->ino) != 0)
                 return 0;
         }
     }
@@ -451,6 +482,8 @@ static ext2_ino_t ext2CreateFile(ext2_vd *vd, ext2_ino_t parent, int type, const
 	inode.i_atime = inode.i_ctime = inode.i_mtime = time(0);
 	inode.i_links_count = 1;
 	inode.i_size = 0;
+    inode.i_uid = parent->ni.i_uid;
+    inode.i_gid = parent->ni.i_gid;
 
 	if (ext2fs_write_new_inode(vd->fs, newfile, &inode) != 0)
         return 0;
@@ -481,6 +514,13 @@ ext2_inode_t *ext2Create(ext2_vd *vd, const char *path, mode_t type, const char 
             errno = EXDEV;
             return NULL;
         }
+        // Check if existing
+        dir_ni = ext2OpenEntry(vd, target);
+        if (dir_ni) {
+            goto cleanup;
+        }
+        ext2CloseEntry(vd, dir_ni);
+        dir_ni = NULL;
         targetdir = strdup(target);
         if (!targetdir) {
             errno = EINVAL;
@@ -523,6 +563,10 @@ ext2_inode_t *ext2Create(ext2_vd *vd, const char *path, mode_t type, const char 
         goto cleanup;
     }
 
+    // If not yet read, read the inode and block bitmap
+    if(!vd->fs->inode_map || !vd->fs->block_map)
+        ext2fs_read_bitmaps(vd->fs);
+
     // Symbolic link
     if(type == S_IFLNK)
     {
@@ -531,17 +575,17 @@ ext2_inode_t *ext2Create(ext2_vd *vd, const char *path, mode_t type, const char 
             goto cleanup;
         }
 
-        newentry = ext2CreateSymlink(vd, dir_ni->ino, path, target, name);
+        newentry = ext2CreateSymlink(vd, path, targetdir, name, type);
     }
     // Directory
     else if(type == S_IFDIR)
     {
-        newentry = ext2CreateMkDir(vd, dir_ni->ino, LINUX_S_IFDIR | (0777 & ~vd->fs->umask), name);
+        newentry = ext2CreateMkDir(vd, dir_ni, LINUX_S_IFDIR | (0755 & ~vd->fs->umask), name);
     }
     // File
     else if(type == S_IFREG)
     {
-        newentry = ext2CreateFile(vd, dir_ni->ino, LINUX_S_IFREG | (0777 & ~vd->fs->umask), name);
+        newentry = ext2CreateFile(vd, dir_ni, LINUX_S_IFREG | (0755 & ~vd->fs->umask), name);
     }
 
     // If the entry was created

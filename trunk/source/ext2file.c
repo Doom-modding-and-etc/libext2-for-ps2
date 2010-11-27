@@ -349,7 +349,7 @@ int ext2_fstat_r (struct _reent *r, int fd, struct stat *st)
 
 int ext2_ftruncate_r (struct _reent *r, int fd, off_t len)
 {
-    ext2_log_trace("fd %p, len %Li\n", fd, len);
+    ext2_log_trace("fd %p, len %Li\n", (void *) fd, len);
 
     ext2_file_state* file = STATE(fd);
     errcode_t err = 0;
