@@ -260,7 +260,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
     partitions = (sec_t *) malloc(sizeof(sec_t));
     if(!partitions)
     {
-        ext2_log_trace("no memory for superblock");
+        ext2_log_trace("no memory for partitions");
         errno = ENOMEM;
         mem_free(super);
         return -1;
@@ -295,7 +295,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                 case PARTITION_TYPE_LINUX:
 
                     // Read and validate the EXT partition
-                    if (interface->readSectors(part_lba+1, 2, super))
+                    if (interface->readSectors(part_lba+SUPERBLOCK_OFFSET/BYTES_PER_SECTOR, SUPERBLOCK_SIZE/BYTES_PER_SECTOR, super))
                     {
                         if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
                         {
@@ -303,6 +303,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                             sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
                             if(!tmp) goto cleanup;
                             partitions = tmp;
+                            partitions[partition_count-1] = part_lba;
                         }
                     }
 
@@ -333,7 +334,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                                 next_erb_lba = ext2fs_le32_to_cpu(sector.ebr.next_ebr.lba_start);
 
                                 // Check if this partition has a valid EXT boot record
-                                if (interface->readSectors(part_lba+1, 2, super))
+                                if (interface->readSectors(part_lba+SUPERBLOCK_OFFSET/BYTES_PER_SECTOR, SUPERBLOCK_SIZE/BYTES_PER_SECTOR, super))
                                 {
                                     if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
                                     {
@@ -341,6 +342,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                                         sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
                                         if(!tmp) goto cleanup;
                                         partitions = tmp;
+                                        partitions[partition_count-1] = part_lba;
                                     }
                                 }
                             }
@@ -359,7 +361,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                 {
                     // Check if this partition has a valid EXT boot record anyway,
                     // it might be misrepresented due to a lazy partition editor
-                    if (interface->readSectors(part_lba+1, 2, super))
+                    if (interface->readSectors(part_lba+SUPERBLOCK_OFFSET/BYTES_PER_SECTOR, SUPERBLOCK_SIZE/BYTES_PER_SECTOR, super))
                     {
                         if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
                         {
@@ -367,6 +369,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                             sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
                             if(!tmp) goto cleanup;
                             partitions = tmp;
+                            partitions[partition_count-1] = part_lba;
                         }
                     }
                     break;
@@ -381,9 +384,9 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
         ext2_log_trace("No Master Boot Record was found!\n");
 
         // As a last-ditched effort, search the first 64 sectors of the device for stray EXT partitions
-        for (i = 0; i < 64; i++)
+        for (i = 1; i < 64; i++)
         {
-            if (interface->readSectors(i, 2, super))
+            if (interface->readSectors(i+SUPERBLOCK_OFFSET/BYTES_PER_SECTOR, SUPERBLOCK_SIZE/BYTES_PER_SECTOR, super))
             {
                 if (ext2fs_le16_to_cpu(super->s_magic) == EXT2_SUPER_MAGIC)
                 {
@@ -391,6 +394,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
                     sec_t * tmp = (sec_t *) realloc(partitions, partition_count*sizeof(sec_t));
                     if(!tmp) goto cleanup;
                     partitions = tmp;
+                    partitions[partition_count-1] = i;
                 }
             }
         }
@@ -406,7 +410,7 @@ int ext2FindPartitions (const DISC_INTERFACE *interface, sec_t **out_partitions)
 
 cleanup:
 
-    if(partitions)
+    if(partitions && partition_count == 0)
         mem_free(partitions);
     if(super)
         mem_free(super);
