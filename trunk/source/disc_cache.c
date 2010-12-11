@@ -83,7 +83,7 @@ CACHE* cache_constructor (unsigned int numberOfPages, unsigned int sectorsPerPag
 		cacheEntries[i].count = 0;
 		cacheEntries[i].last_access = 0;
 		cacheEntries[i].dirty = false;
-		cacheEntries[i].cache = (uint8_t*) mem_align ( sectorsPerPage * cache->sectorSize );
+		cacheEntries[i].cache = (uint8_t*) mem_align (32, sectorsPerPage * cache->sectorSize);
 	}
 
 	cache->cacheEntries = cacheEntries;
