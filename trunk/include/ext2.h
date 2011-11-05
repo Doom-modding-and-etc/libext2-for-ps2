@@ -28,17 +28,24 @@ extern "C" {
 #include <gccore.h>
 #include <ogc/disc_io.h>
 
-/* EXT2 cache options */
-#define CACHE_DEFAULT_PAGE_COUNT        8       /* The default number of pages in the cache */
-#define CACHE_DEFAULT_PAGE_SIZE         128     /* The default number of sectors per cache page */
+/**
+ * EXT2 cache options
+ *
+ * It is recommended to use more pages instead of large page sizes for cache due to the sporadic write behaviour of ext file system.
+ * It will significantly increase the speed. A page size of 32 is mostly suffiecient. The larger the page count the faster the
+ * read/write between smaller files will be. Larger page sizes result in faster read/write of single big files.
+ */
+#define EXT2_CACHE_DEFAULT_PAGE_COUNT   64      /* The default number of pages in the cache */
+#define EXT2_CACHE_DEFAULT_PAGE_SIZE    32      /* The default number of sectors per cache page */
 
 /* EXT2 mount flags */
-#define EXT2_FLAG_RW			        0x00001 /* Open the filesystem for reading and writing.  Without this flag, the filesystem is opened for reading only. */
-#define EXT2_FLAG_FORCE			        0x00400 /* Open the filesystem regardless of the feature sets listed in the superblock */
-#define EXT2_FLAG_JOURNAL_DEV_OK	    0x01000 /* Only open external journal devices if this flag is set (e.g. ext3/ext4) */
-#define EXT2_FLAG_64BITS		        0x20000 /* Use the new style 64-Bit bitmaps. For more information see gen_bitmap64.c */
-#define EXT2_FLAG_PRINT_PROGRESS	    0x40000 /* If this flag is set the progress of file operations will be printed to stdout */
-#define EXT2_FLAG_DEFAULT               (EXT2_FLAG_RW | EXT2_FLAG_64BITS | EXT2_FLAG_JOURNAL_DEV_OK)
+#define EXT2_FLAG_RW                    0x00001 /* Open the filesystem for reading and writing.  Without this flag, the filesystem is opened for reading only. */
+#define EXT2_FLAG_FORCE                 0x00400 /* Open the filesystem regardless of the feature sets listed in the superblock */
+#define EXT2_FLAG_JOURNAL_DEV_OK        0x01000 /* Only open external journal devices if this flag is set (e.g. ext3/ext4) */
+#define EXT2_FLAG_64BITS                0x20000 /* Use the new style 64-Bit bitmaps. For more information see gen_bitmap64.c */
+#define EXT2_FLAG_PRINT_PROGRESS        0x40000 /* If this flag is set the progress of file operations will be printed to stdout */
+#define EXT2_FLAG_SKIP_MMP              0x100000 /* Open without multi-mount protection check. */
+#define EXT2_FLAG_DEFAULT               (EXT2_FLAG_RW | EXT2_FLAG_64BITS | EXT2_FLAG_JOURNAL_DEV_OK | EXT2_FLAG_SKIP_MMP)
 
 /**
  * Find all EXT2/3/4 partitions on a block device.
