@@ -7,13 +7,17 @@ extern __inline__ void* mem_alloc (size_t size) {
     return malloc(size);
 }
 
+extern __inline__ void* mem_calloc (size_t count, size_t size) {
+    return calloc(count, size);
+}
+
 extern __inline__ void* mem_realloc (void *p, size_t size) {
     return realloc(p, size);
 }
 
 extern __inline__ void* mem_align (size_t a, size_t size) {
     #ifdef __wii__
-    return memalign(32, size);
+    return memalign(a, size);
     #else
     return malloc(size);
     #endif
