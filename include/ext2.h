@@ -1,7 +1,8 @@
 /********************************************************************************
  * ext2.h - devoptab file routines for EXT2/3/4-based devices.                  *
- *                                                                              *
- * Copyright (c) 2010 Dimok                                                     *
+ * Adapted to Playstation 2                                                     *
+ * Copyright (c) 2010 Dimok                                                     *      
+ * Copyright (c) 2021 André Guilherme mendes da luz bastos                                         *
  *                                                                              *
  * This program/include file is free software; you can redistribute it and/or   *
  * modify it under the terms of the GNU General Public License as published     *
@@ -24,9 +25,26 @@
 extern "C" {
 #endif
 
-#include <gctypes.h>
-#include <gccore.h>
-#include <ogc/disc_io.h>
+#include <bdm.h> 
+#define MX4SIO 
+#define Ilink 
+#define USB_MASS
+typedef struct extfs_sectors
+{
+  u32 *ext2_sectors = 512;
+  u32 ext3_sectors = 512;
+  u64 ext4_sectors = 4096;
+};
+
+typedef struct bdm_EXT_mdblock 
+{
+    char name[32];                      /* Mount name (can be accessed as "mass0:/", hdd0: or else) */
+    struct block_device* DISC_INTERFACE;    /* Block device containing the mounted partition */
+    startSector;                  /* Local block address to first sector of partition */
+    const bool stopSectors;
+    struct block_device **ntfspartitions;  
+};
+
 
 /**
  * EXT2 cache options
@@ -61,7 +79,7 @@ int ext2FindPartitions(const DISC_INTERFACE *interface, sec_t **partitions);
 /**
  * Mount a EXT2/3/4 partition from a specific sector on a block device.
  *
- * @param NAME The name to mount the device under (can then be accessed as "NAME:/")
+ * @param NAME The name to mount the device under (can then be accessed as "mass0:/")
  * @param INTERFACE The block device to mount
  * @param STARTSECTOR The sector the partition begins at
  * @param CACHEPAGECOUNT The total number of pages in the device cache

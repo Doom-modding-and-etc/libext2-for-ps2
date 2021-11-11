@@ -24,7 +24,6 @@
 #include "ext2_fs.h"
 #include "ext2fs.h"
 #include "ext2_internal.h"
-#include "gekko_io.h"
 #include "mem_allocate.h"
 #include "partitions.h"
 

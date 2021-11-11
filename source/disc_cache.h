@@ -39,9 +39,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <gctypes.h>
-#include <ogc/disc_io.h>
-#include <gccore.h>
 
 typedef struct
 {

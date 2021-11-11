@@ -1,7 +1,7 @@
 #ifndef HASHMAP_H
 # define HASHMAP_H
 
-# include <stdlib.h>
+# include <stddef.h>
 # include <stdint.h>
 
 #ifndef __GNUC_PREREQ

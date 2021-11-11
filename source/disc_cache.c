@@ -35,7 +35,6 @@
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <ogc/lwp_watchdog.h>
 #include <string.h>
 #include <limits.h>
 

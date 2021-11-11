@@ -70,7 +70,7 @@ extern "C" {
 #endif
 
 #include <stdio.h>
-#include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <time.h>
 #include <errno.h>
@@ -80,9 +80,9 @@ extern "C" {
 #include "ext2_fs.h"
 #include "ext3_extents.h"
 #else
-#include <ext2fs/ext2_types.h>
-#include <ext2fs/ext2_fs.h>
-#include <ext2fs/ext3_extents.h>
+#include "ext2_types.h"
+#include "ext2_fs.h"
+#include "ext3_extents.h"
 #endif /* EXT2_FLAT_INCLUDES */
 
 typedef __u32 __bitwise		ext2_ino_t;
