@@ -37,7 +37,7 @@ int ext2fs_parse_version_string(const char *ver_string)
 			else
 				continue;
 		}
-		if (!isdigit((int)*cp))
+		if (!isdigit(*cp))
 			break;
 		version = (version * 10) + (*cp - '0');
 	}

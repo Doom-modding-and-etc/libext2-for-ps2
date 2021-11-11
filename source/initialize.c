@@ -28,6 +28,10 @@
 #include "ext2_fs.h"
 #include "ext2fs.h"
 
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
+
 #if defined(__linux__)    &&	defined(EXT2_OS_LINUX)
 #define CREATOR_OS EXT2_OS_LINUX
 #else
@@ -98,8 +102,12 @@ errcode_t ext2fs_initialize(const char *name, int flags,
 	int		csum_flag;
 	int		bigalloc_flag;
 	int		io_flags;
+	int		has_bg;
+	unsigned	reserved_inos;
 	char		*buf = 0;
 	char		c;
+	double		reserved_ratio;
+	char		*time_env;
 
 	if (!param || !ext2fs_blocks_count(param))
 		return EXT2_ET_INVALID_ARGUMENT;
@@ -116,11 +124,17 @@ errcode_t ext2fs_initialize(const char *name, int flags,
 #ifdef WORDS_BIGENDIAN
 	fs->flags |= EXT2_FLAG_SWAP_BYTES;
 #endif
+
+	time_env = getenv("E2FSPROGS_FAKE_TIME");
+	if (time_env)
+		fs->now = strtoul(time_env, NULL, 0);
+
 	io_flags = IO_FLAG_RW;
 	if (flags & EXT2_FLAG_EXCLUSIVE)
 		io_flags |= IO_FLAG_EXCLUSIVE;
 	if (flags & EXT2_FLAG_DIRECT_IO)
 		io_flags |= IO_FLAG_DIRECT_IO;
+	io_flags |= O_BINARY;
 	retval = manager->open(name, io_flags, &fs->io);
 	if (retval)
 		goto cleanup;
@@ -145,8 +159,7 @@ errcode_t ext2fs_initialize(const char *name, int flags,
 	super->s_magic = EXT2_SUPER_MAGIC;
 	super->s_state = EXT2_VALID_FS;
 
-	bigalloc_flag = EXT2_HAS_RO_COMPAT_FEATURE(param,
-				   EXT4_FEATURE_RO_COMPAT_BIGALLOC);
+	bigalloc_flag = ext2fs_has_feature_bigalloc(param);
 
 	assign_field(s_log_block_size);
 
@@ -171,6 +184,15 @@ errcode_t ext2fs_initialize(const char *name, int flags,
 	set_field(s_raid_stripe_width, 0);	/* default stripe width: 0 */
 	set_field(s_log_groups_per_flex, 0);
 	set_field(s_flags, 0);
+	assign_field(s_backup_bgs[0]);
+	assign_field(s_backup_bgs[1]);
+
+	assign_field(s_encoding);
+	assign_field(s_encoding_flags);
+
+	if (ext2fs_has_feature_casefold(param))
+		fs->encoding = ext2fs_load_nls_table(param->s_encoding);
+
 	if (super->s_feature_incompat & ~EXT2_LIB_FEATURE_INCOMPAT_SUPP) {
 		retval = EXT2_ET_UNSUPP_FEATURE;
 		goto cleanup;
@@ -205,6 +227,8 @@ errcode_t ext2fs_initialize(const char *name, int flags,
 		super->s_log_block_size;
 
 	if (bigalloc_flag) {
+		unsigned long long bpg;
+
 		if (param->s_blocks_per_group &&
 		    param->s_clusters_per_group &&
 		    ((param->s_clusters_per_group * EXT2FS_CLUSTER_RATIO(fs)) !=
@@ -218,12 +242,19 @@ errcode_t ext2fs_initialize(const char *name, int flags,
 			super->s_clusters_per_group = 
 				param->s_blocks_per_group /
 				EXT2FS_CLUSTER_RATIO(fs);
-		else
+		else if (super->s_log_cluster_size + 15 < 32)
 			super->s_clusters_per_group = fs->blocksize * 8;
+		else
+			super->s_clusters_per_group = (fs->blocksize - 1) * 8;
 		if (super->s_clusters_per_group > EXT2_MAX_CLUSTERS_PER_GROUP(super))
 			super->s_clusters_per_group = EXT2_MAX_CLUSTERS_PER_GROUP(super);
-		super->s_blocks_per_group = EXT2FS_C2B(fs,
-				       super->s_clusters_per_group);
+		bpg = EXT2FS_C2B(fs,
+			(unsigned long long) super->s_clusters_per_group);
+		if (bpg >= (((unsigned long long) 1) << 32)) {
+			retval = EXT2_ET_INVALID_ARGUMENT;
+			goto cleanup;
+		}
+		super->s_blocks_per_group = bpg;
 	} else {
 		set_field(s_blocks_per_group, fs->blocksize * 8);
 		if (super->s_blocks_per_group > EXT2_MAX_BLOCKS_PER_GROUP(super))
@@ -239,11 +270,13 @@ errcode_t ext2fs_initialize(const char *name, int flags,
 		goto cleanup;
 	}
 
+	set_field(s_mmp_update_interval, 0);
+
 	/*
 	 * If we're creating an external journal device, we don't need
 	 * to bother with the rest.
 	 */
-	if (super->s_feature_incompat & EXT3_FEATURE_INCOMPAT_JOURNAL_DEV) {
+	if (ext2fs_has_feature_journal_dev(super)) {
 		fs->group_desc_count = 0;
 		ext2fs_mark_super_dirty(fs);
 		*ret_fs = fs;
@@ -259,16 +292,17 @@ retry:
 		goto cleanup;
 	}
 
-	if (super->s_feature_incompat & EXT4_FEATURE_INCOMPAT_64BIT)
-		super->s_desc_size = EXT2_MIN_DESC_SIZE_64BIT;
+	set_field(s_desc_size,
+		  ext2fs_has_feature_64bit(super) ?
+		  EXT2_MIN_DESC_SIZE_64BIT : 0);
 
 	fs->desc_blocks = ext2fs_div_ceil(fs->group_desc_count,
 					  EXT2_DESC_PER_BLOCK(super));
 
 	i = fs->blocksize >= 4096 ? 1 : 4096 / fs->blocksize;
 
-	if (super->s_feature_incompat & EXT4_FEATURE_INCOMPAT_64BIT &&
-	    (ext2fs_blocks_count(super) / i) > (1ULL << 32))
+	if (ext2fs_has_feature_64bit(super) &&
+	    (ext2fs_blocks_count(super) / i) >= (1ULL << 32))
 		set_field(s_inodes_count, ~0U);
 	else
 		set_field(s_inodes_count, ext2fs_blocks_count(super) / i);
@@ -346,7 +380,7 @@ ipg_retry:
 	/*
 	 * check the number of reserved group descriptor table blocks
 	 */
-	if (super->s_feature_compat & EXT2_FEATURE_COMPAT_RESIZE_INODE)
+	if (ext2fs_has_feature_resize_inode(super))
 		rsv_gdt = calc_reserved_gdt_blocks(fs);
 	else
 		rsv_gdt = 0;
@@ -354,6 +388,13 @@ ipg_retry:
 	if (super->s_reserved_gdt_blocks > EXT2_ADDR_PER_BLOCK(super)) {
 		retval = EXT2_ET_RES_GDT_BLOCKS;
 		goto cleanup;
+	}
+	/* Enable meta_bg if we'd lose more than 3/4 of a BG to GDT blocks. */
+	if (super->s_reserved_gdt_blocks + fs->desc_blocks >
+	    super->s_blocks_per_group * 3 / 4) {
+		ext2fs_set_feature_meta_bg(fs->super);
+		ext2fs_clear_feature_resize_inode(fs->super);
+		set_field(s_reserved_gdt_blocks, 0);
 	}
 
 	/*
@@ -363,7 +404,12 @@ ipg_retry:
 	 * table, and the reserved gdt blocks.
 	 */
 	overhead = (int) (3 + fs->inode_blocks_per_group +
-			  fs->desc_blocks + super->s_reserved_gdt_blocks);
+			  super->s_reserved_gdt_blocks);
+
+	if (ext2fs_has_feature_meta_bg(fs->super))
+		overhead++;
+	else
+		overhead += fs->desc_blocks;
 
 	/* This can only happen if the user requested too many inodes */
 	if (overhead > super->s_blocks_per_group) {
@@ -379,7 +425,19 @@ ipg_retry:
 	 * backup.
 	 */
 	overhead = (int) (2 + fs->inode_blocks_per_group);
-	if (ext2fs_bg_has_super(fs, fs->group_desc_count - 1))
+	has_bg = 0;
+	if (ext2fs_has_feature_sparse_super2(super)) {
+		/*
+		 * We have to do this manually since
+		 * super->s_backup_bgs hasn't been set up yet.
+		 */
+		if (fs->group_desc_count == 2)
+			has_bg = param->s_backup_bgs[0] != 0;
+		else
+			has_bg = param->s_backup_bgs[1] != 0;
+	} else
+		has_bg = ext2fs_bg_has_super(fs, fs->group_desc_count - 1);
+	if (has_bg)
 		overhead += 1 + fs->desc_blocks + super->s_reserved_gdt_blocks;
 	rem = ((ext2fs_blocks_count(super) - super->s_first_data_block) %
 	       super->s_blocks_per_group);
@@ -390,6 +448,14 @@ ipg_retry:
 	if (rem && (rem < overhead+50)) {
 		ext2fs_blocks_count_set(super, ext2fs_blocks_count(super) -
 					rem);
+		/*
+		 * If blocks count is changed, we need to recalculate
+		 * reserved blocks count not to exceed 50%.
+		 */
+		reserved_ratio = 100.0 * ext2fs_r_blocks_count(param) /
+			ext2fs_blocks_count(param);
+		ext2fs_r_blocks_count_set(super, reserved_ratio *
+			ext2fs_blocks_count(super) / 100.0);
 
 		goto retry;
 	}
@@ -399,6 +465,21 @@ ipg_retry:
 	 * we can do any and all allocations that depend on the block
 	 * count.
 	 */
+
+	/* Set up the locations of the backup superblocks */
+	if (ext2fs_has_feature_sparse_super2(super)) {
+		if (super->s_backup_bgs[0] >= fs->group_desc_count)
+			super->s_backup_bgs[0] = fs->group_desc_count - 1;
+		if (super->s_backup_bgs[1] >= fs->group_desc_count)
+			super->s_backup_bgs[1] = fs->group_desc_count - 1;
+		if (super->s_backup_bgs[0] == super->s_backup_bgs[1])
+			super->s_backup_bgs[1] = 0;
+		if (super->s_backup_bgs[0] > super->s_backup_bgs[1]) {
+			__u32 t = super->s_backup_bgs[0];
+			super->s_backup_bgs[0] = super->s_backup_bgs[1];
+			super->s_backup_bgs[1] = t;
+		}
+	}
 
 	retval = ext2fs_get_mem(strlen(fs->device_name) + 80, &buf);
 	if (retval)
@@ -437,8 +518,8 @@ ipg_retry:
 	 * bitmaps will be accounted for when allocated).
 	 */
 	free_blocks = 0;
-	csum_flag = EXT2_HAS_RO_COMPAT_FEATURE(fs->super,
-					       EXT4_FEATURE_RO_COMPAT_GDT_CSUM);
+	csum_flag = ext2fs_has_group_desc_csum(fs);
+	reserved_inos = super->s_first_ino;
 	for (i = 0; i < fs->group_desc_count; i++) {
 		/*
 		 * Don't set the BLOCK_UNINIT group for the last group
@@ -450,8 +531,15 @@ ipg_retry:
 						    EXT2_BG_BLOCK_UNINIT);
 			ext2fs_bg_flags_set(fs, i, EXT2_BG_INODE_UNINIT);
 			numblocks = super->s_inodes_per_group;
-			if (i == 0)
-				numblocks -= super->s_first_ino;
+			if (reserved_inos) {
+				if (numblocks > reserved_inos) {
+					numblocks -= reserved_inos;
+					reserved_inos = 0;
+				} else {
+					reserved_inos -= numblocks;
+					numblocks = 0;
+				}
+			}
 			ext2fs_bg_itable_unused_set(fs, i, numblocks);
 		}
 		numblocks = ext2fs_reserve_super_and_bgd(fs, i, fs->block_map);
@@ -486,4 +574,98 @@ cleanup:
 	free(buf);
 	ext2fs_free(fs);
 	return retval;
+}
+
+errcode_t ext2fs_calculate_summary_stats(ext2_filsys fs, int super_only)
+{
+	blk64_t		blk;
+	ext2_ino_t	ino;
+	unsigned int	group = 0;
+	unsigned int	count = 0;
+	int		total_free = 0;
+	int		group_free = 0;
+	int		last_allocated = 0;
+	int		uninit;
+
+	/*
+	 * First calculate the block statistics
+	 */
+	uninit = 1;
+	for (blk = fs->super->s_first_data_block;
+	     blk < ext2fs_blocks_count(fs->super); blk++) {
+		if (!ext2fs_fast_test_block_bitmap2(fs->block_map, blk)) {
+			group_free++;
+			total_free++;
+		} else {
+			uninit = 0;
+		}
+		count++;
+		if ((count == fs->super->s_blocks_per_group) ||
+		    (blk == ext2fs_blocks_count(fs->super)-1)) {
+			ext2fs_bg_free_blocks_count_set(fs, group,
+							group_free);
+			if (!super_only) {
+				if (uninit && blk !=
+					ext2fs_blocks_count(fs->super) - 1)
+					ext2fs_bg_flags_set(fs, group,
+							EXT2_BG_BLOCK_UNINIT);
+				else
+					ext2fs_bg_flags_clear(fs, group,
+							EXT2_BG_BLOCK_UNINIT);
+			}
+			count = 0;
+			group_free = 0;
+			uninit = 1;
+			group++;
+		}
+	}
+	total_free = EXT2FS_C2B(fs, total_free);
+	ext2fs_free_blocks_count_set(fs->super, total_free);
+
+	/*
+	 * Next, calculate the inode statistics
+	 */
+	group_free = 0;
+	total_free = 0;
+	last_allocated = 0;
+	count = 0;
+	group = 0;
+
+	/* Protect loop from wrap-around if s_inodes_count maxed */
+	for (ino = 1; ino <= fs->super->s_inodes_count && ino > 0; ino++) {
+		if (!ext2fs_test_inode_bitmap2(fs->inode_map, ino)) {
+			group_free++;
+			total_free++;
+		} else {
+			last_allocated = ino;
+		}
+		count++;
+		if ((count == fs->super->s_inodes_per_group) ||
+		    (ino == fs->super->s_inodes_count)) {
+			if (!super_only) {
+				if (last_allocated) {
+					ext2fs_bg_flags_clear(fs, group,
+						EXT2_BG_INODE_UNINIT);
+					ext2fs_bg_itable_unused_set(fs, group,
+						fs->super->s_inodes_per_group -
+						(last_allocated %
+						fs->super->s_inodes_per_group));
+				} else {
+					ext2fs_bg_flags_set(fs, group,
+						EXT2_BG_INODE_UNINIT);
+					ext2fs_bg_itable_unused_set(fs, group,
+									0);
+				}
+				ext2fs_bg_free_inodes_count_set(fs, group,
+								group_free);
+			}
+			group++;
+			count = 0;
+			group_free = 0;
+			last_allocated = 0;
+		}
+	}
+	fs->super->s_free_inodes_count = total_free;
+	ext2fs_mark_super_dirty(fs);
+	return 0;
 }

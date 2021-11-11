@@ -9,8 +9,12 @@
  * %End-Header%
  */
 
+#ifndef _LARGEFILE_SOURCE
 #define _LARGEFILE_SOURCE
+#endif
+#ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
+#endif
 
 #include "config.h"
 #if HAVE_SYS_TYPES_H
@@ -26,9 +30,8 @@
 #ifdef __MSDOS__
 #include <io.h>
 #endif
-
-#include "ext2_fs.h"
-#include "ext2fs.h"
+#include "et/com_err.h"
+#include "ext2fs/ext2_io.h"
 
 #ifdef __linux__
 
@@ -38,7 +41,7 @@
 
 #else
 #if defined(HAVE_LLSEEK)
-#include <syscall.h>
+#include <sys/syscall.h>
 
 #ifndef HAVE_LLSEEK_PROTOTYPE
 extern long long llseek (int fd, long long offset, int origin);
@@ -50,7 +53,7 @@ extern long long llseek (int fd, long long offset, int origin);
 
 #if SIZEOF_LONG == SIZEOF_LONG_LONG
 
-#define llseek lseek
+#define my_llseek lseek
 
 #else /* SIZEOF_LONG != SIZEOF_LONG_LONG */
 
@@ -84,24 +87,21 @@ static ext2_loff_t my_llseek (int fd, ext2_loff_t offset, int origin)
 	return (retval == -1 ? (ext2_loff_t) retval : result);
 }
 
-#endif	/* __alpha__ || __ia64__ */
+#endif	/* SIZE_LONG == SIZEOF_LONG_LONG */
 
 #endif /* HAVE_LLSEEK */
 #endif /* defined(HAVE_LSEEK64) && defined(HAVE_LSEEK64_PROTOTYPE) */
 
 ext2_loff_t ext2fs_llseek (int fd, ext2_loff_t offset, int origin)
 {
+#if SIZEOF_OFF_T >= SIZEOF_LONG_LONG
+	return my_llseek (fd, offset, origin);
+#else
 	ext2_loff_t result;
 	static int do_compat = 0;
 
-	if ((sizeof(off_t) >= sizeof(ext2_loff_t)) ||
-	    (offset < ((ext2_loff_t) 1 << ((sizeof(off_t)*8) -1))))
-		return lseek(fd, (off_t) offset, origin);
-
-	if (do_compat) {
-		errno = EINVAL;
-		return -1;
-	}
+	if (do_compat)
+		goto fallback;
 
 	result = my_llseek (fd, offset, origin);
 	if (result == -1 && errno == ENOSYS) {
@@ -110,9 +110,14 @@ ext2_loff_t ext2fs_llseek (int fd, ext2_loff_t offset, int origin)
 		 * which does not support the llseek system call
 		 */
 		do_compat++;
+	fallback:
+		if (offset < ((ext2_loff_t) 1 << ((sizeof(off_t)*8) -1)))
+			return lseek(fd, (off_t) offset, origin);
 		errno = EINVAL;
+		return -1;
 	}
 	return result;
+#endif
 }
 
 #else /* !linux */

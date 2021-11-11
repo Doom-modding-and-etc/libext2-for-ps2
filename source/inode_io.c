@@ -63,19 +63,17 @@ static errcode_t inode_write_blk64(io_channel channel,
 				unsigned long long block, int count, const void *data);
 
 static struct struct_io_manager struct_inode_manager = {
-	EXT2_ET_MAGIC_IO_MANAGER,
-	"Inode I/O Manager",
-	inode_open,
-	inode_close,
-	inode_set_blksize,
-	inode_read_blk,
-	inode_write_blk,
-	inode_flush,
-	inode_write_byte,
-	NULL,
-	NULL,
-	inode_read_blk64,
-	inode_write_blk64
+	.magic		= EXT2_ET_MAGIC_IO_MANAGER,
+	.name		= "Inode I/O Manager",
+	.open		= inode_open,
+	.close		= inode_close,
+	.set_blksize	= inode_set_blksize,
+	.read_blk	= inode_read_blk,
+	.write_blk	= inode_write_blk,
+	.flush		= inode_flush,
+	.write_byte	= inode_write_byte,
+	.read_blk64	= inode_read_blk64,
+	.write_blk64	= inode_write_blk64
 };
 
 io_manager inode_io_manager = &struct_inode_manager;
@@ -217,9 +215,9 @@ static errcode_t inode_read_blk64(io_channel channel,
 	data = (struct inode_private_data *) channel->private_data;
 	EXT2_CHECK_MAGIC(data, EXT2_ET_MAGIC_INODE_IO_CHANNEL);
 
-	if ((retval = ext2fs_file_lseek(data->file,
-					block * channel->block_size,
-					EXT2_SEEK_SET, 0)))
+	if ((retval = ext2fs_file_llseek(data->file,
+				(ext2_off64_t)(block * channel->block_size),
+				EXT2_SEEK_SET, 0)))
 		return retval;
 
 	count = (count < 0) ? -count : (count * channel->block_size);
@@ -243,9 +241,9 @@ static errcode_t inode_write_blk64(io_channel channel,
 	data = (struct inode_private_data *) channel->private_data;
 	EXT2_CHECK_MAGIC(data, EXT2_ET_MAGIC_INODE_IO_CHANNEL);
 
-	if ((retval = ext2fs_file_lseek(data->file,
-					block * channel->block_size,
-					EXT2_SEEK_SET, 0)))
+	if ((retval = ext2fs_file_llseek(data->file,
+				(ext2_off64_t) (block * channel->block_size),
+				EXT2_SEEK_SET, 0)))
 		return retval;
 
 	count = (count < 0) ? -count : (count * channel->block_size);

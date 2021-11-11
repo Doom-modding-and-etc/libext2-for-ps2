@@ -18,12 +18,14 @@
 
 #include "ext2_fs.h"
 #include "ext2fs.h"
+#include "ext2fsP.h"
 
 struct expand_dir_struct {
 	int		done;
 	int		newblocks;
 	blk64_t		goal;
 	errcode_t	err;
+	ext2_ino_t	dir;
 };
 
 static int expand_dir_proc(ext2_filsys	fs,
@@ -54,6 +56,7 @@ static int expand_dir_proc(ext2_filsys	fs,
 			return BLOCK_ABORT;
 		}
 		es->newblocks++;
+		ext2fs_block_alloc_stats2(fs, new_blk, +1);
 	}
 	if (blockcnt > 0) {
 		retval = ext2fs_new_dir_block(fs, 0, 0, &block);
@@ -62,25 +65,18 @@ static int expand_dir_proc(ext2_filsys	fs,
 			return BLOCK_ABORT;
 		}
 		es->done = 1;
-		retval = ext2fs_write_dir_block(fs, new_blk, block);
-	} else {
-		retval = ext2fs_get_mem(fs->blocksize, &block);
-		if (retval) {
-			es->err = retval;
-			return BLOCK_ABORT;
-		}
-		memset(block, 0, fs->blocksize);
-		retval = io_channel_write_blk64(fs->io, new_blk, 1, block);
-	}
+		retval = ext2fs_write_dir_block4(fs, new_blk, block, 0,
+						 es->dir);
+		ext2fs_free_mem(&block);
+	} else
+		retval = ext2fs_zero_blocks2(fs, new_blk, 1, NULL, NULL);
 	if (blockcnt >= 0)
 		es->goal = new_blk;
 	if (retval) {
 		es->err = retval;
 		return BLOCK_ABORT;
 	}
-	ext2fs_free_mem(&block);
 	*blocknr = new_blk;
-	ext2fs_block_alloc_stats2(fs, new_blk, +1);
 
 	if (es->done)
 		return (BLOCK_CHANGED | BLOCK_ABORT);
@@ -106,13 +102,20 @@ errcode_t ext2fs_expand_dir(ext2_filsys fs, ext2_ino_t dir)
 	if (retval)
 		return retval;
 
+	retval = ext2fs_read_inode(fs, dir, &inode);
+	if (retval)
+		return retval;
+
 	es.done = 0;
 	es.err = 0;
-	es.goal = 0;
+	es.goal = ext2fs_find_inode_goal(fs, dir, &inode, 0);
 	es.newblocks = 0;
+	es.dir = dir;
 
 	retval = ext2fs_block_iterate3(fs, dir, BLOCK_FLAG_APPEND,
 				       0, expand_dir_proc, &es);
+	if (retval == EXT2_ET_INLINE_DATA_CANT_ITERATE)
+		return ext2fs_inline_data_expand(fs, dir);
 
 	if (es.err)
 		return es.err;
@@ -126,7 +129,10 @@ errcode_t ext2fs_expand_dir(ext2_filsys fs, ext2_ino_t dir)
 	if (retval)
 		return retval;
 
-	inode.i_size += fs->blocksize;
+	retval = ext2fs_inode_size_set(fs, &inode,
+				       EXT2_I_SIZE(&inode) + fs->blocksize);
+	if (retval)
+		return retval;
 	ext2fs_iblk_add_blocks(fs, &inode, es.newblocks);
 
 	retval = ext2fs_write_inode(fs, dir, &inode);

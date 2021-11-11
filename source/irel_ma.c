@@ -97,14 +97,18 @@ errcode_t ext2fs_irel_memarray_create(char *name, ext2_ino_t max_inode,
 		goto errout;
 	memset(ma->orig_map, 0, size);
 
-	size = (size_t) (sizeof(struct ext2_inode_relocate_entry) * (max_inode+1));
-	retval = ext2fs_get_array((max_inode+1), sizeof(struct ext2_inode_relocate_entry), &ma->entries);
+	size = (size_t) (sizeof(struct ext2_inode_relocate_entry) *
+			 (max_inode+1));
+	retval = ext2fs_get_array((max_inode+1,
+		sizeof(struct ext2_inode_relocate_entry), &ma->entries);
 	if (retval)
 		goto errout;
 	memset(ma->entries, 0, size);
 
-	size = (size_t) (sizeof(struct inode_reference_entry) * (max_inode+1));
-	retval = ext2fs_get_mem(size, &ma->ref_entries);
+	size = (size_t) (sizeof(struct inode_reference_entry) *
+			 (max_inode+1));
+	retval = ext2fs_get_mem(max_inode+1,
+		sizeof(struct inode_reference_entry), &ma->ref_entries);
 	if (retval)
 		goto errout;
 	memset(ma->ref_entries, 0, size);
