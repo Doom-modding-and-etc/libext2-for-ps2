@@ -74,7 +74,7 @@ typedef struct bdm_EXT_mdblock
  * @return The number of entries in PARTITIONS or -1 if an error occurred (see errno)
  * @note The caller is responsible for freeing PARTITIONS when finished with it
  */
-int ext2FindPartitions(const DISC_INTERFACE *interface, sec_t **partitions);
+int bdmext2FindPartitions(const DISC_INTERFACE *interface, sec_t **partitions);
 
 /**
  * Mount a EXT2/3/4 partition from a specific sector on a block device.
@@ -88,14 +88,14 @@ int ext2FindPartitions(const DISC_INTERFACE *interface, sec_t **partitions);
  *
  * @return True if mount was successful, false if no partition was found or an error occurred (see errno)
  */
-bool ext2Mount(const char *name, const DISC_INTERFACE *interface, sec_t startSector, u32 cachePageCount, u32 cachePageSize, u32 flags);
+bool bdmext2Mount(const char *name, const DISC_INTERFACE *interface, sec_t startSector, u32 cachePageCount, u32 cachePageSize, u32 flags);
 
 /**
  * Unmount a EXT2/3/4 partition.
  *
  * @param NAME The name of mount used in ext2Mount()
  */
-void ext2Unmount(const char *name);
+void bdmext2Unmount(const char *name);
 
 /**
  * Get the volume name of a mounted EXT2/3/4 partition.
@@ -104,7 +104,7 @@ void ext2Unmount(const char *name);
  *
  * @return The volumes name if successful or NULL if an error occurred (see errno)
  */
-const char *ext2GetVolumeName (const char *name);
+const char *bdmext2GetVolumeName (const char *name);
 
 /**
  * Set the volume name of a mounted EXT2/3/4 partition.
@@ -115,7 +115,7 @@ const char *ext2GetVolumeName (const char *name);
  * @return True if mount was successful, false if an error occurred (see errno)
  * @note The mount must be write-enabled else this will fail
  */
-bool ext2SetVolumeName (const char *name, const char *volumeName);
+bool bdmext2SetVolumeName (const char *name, const char *volumeName);
 
 #ifdef __cplusplus
 }
