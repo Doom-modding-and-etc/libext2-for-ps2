@@ -25,7 +25,6 @@
 extern "C" {
 #endif
 
-#include <bdm.h> 
 #define MX4SIO 
 #define Ilink 
 #define USB_MASS
@@ -33,9 +32,9 @@ typedef unsigned int u32;
 
 struct extfs_sectors
 {
-  u32 ext2_sectors = 512;
-  u32 ext3_sectors = 512;
-  u32 ext4_sectors = 4096;
+  u32 ext2_sectors;
+  u32 ext3_sectors;
+  u32 ext4_sectors;
 };
 
 struct bdm_EXT_mdblock 

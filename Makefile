@@ -29,13 +29,13 @@ ifeq ($(PS2DEV),)
 	@exit 1
 endif
 	@echo Copying...
-	@cp -frv include/ext2.h $(PS2SDK)/ee/include/
+	@cp -frv include/EE/ext2.h $(PS2SDK)/ee/include/
 	@cp -f $(EE_LIB) $(PS2SDK)/ee/lib
 	@echo Done!
 	
 clean:
 	@rm -f -r $(EE_LIB) $(EE_OBJS) 
-	@rm -f -r $(IOP_LIB) $(EE_OBJS)
+	@rm -f -r $(IOP_LIB) $(IOP_OBJS) $(IOP_OBJS_DIR)
 
 install: IOP EE clean
 
